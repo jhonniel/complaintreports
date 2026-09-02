@@ -6,6 +6,7 @@ import { errorHandler, notFound } from './middleware/errorHandler.ts'
 import { healthLimiter } from './middleware/rateLimit.ts'
 import { sanitizeBody } from './middleware/sanitize.ts'
 import { requireReportStore } from './middleware/requireStore.ts'
+import { parseJsonBody } from './middleware/parseJsonBody.ts'
 import { restoreVercelApiPath } from './middleware/vercelPath.ts'
 import { adminRouter } from './routes/admin.ts'
 import { devRouter } from './routes/dev.ts'
@@ -36,7 +37,7 @@ app.use(
     credentials: true,
   }),
 )
-app.use(express.json({ limit: '64kb' }))
+app.use(parseJsonBody)
 app.use(sanitizeBody)
 
 app.get('/api/health', healthLimiter, healthHandler)

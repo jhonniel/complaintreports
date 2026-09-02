@@ -39,8 +39,10 @@ publicRouter.post(
   '/reports',
   publicWriteLimiter,
   (req, res, next) => {
-    const honeypot = typeof req.body?.website === 'string' ? req.body.website.trim() : ''
-    if (honeypot.length > 0) {
+    const honeypot = [req.body?.tp_hp, req.body?.website]
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .find((value) => value.length > 0)
+    if (honeypot) {
       return sendError(res, 400, 'Unable to submit your report.')
     }
     next()
@@ -75,6 +77,14 @@ publicRouter.post(
         return
       }
       logError('public.reports', error)
+      if (error instanceof Error && error.message === 'STORAGE_UNAVAILABLE') {
+        sendError(
+          res,
+          503,
+          'The service is temporarily unavailable. Please try again in a moment.',
+        )
+        return
+      }
       sendError(res, 500, 'Unable to submit your report.')
     }
   }),

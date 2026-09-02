@@ -23,6 +23,22 @@ import { ApiError } from '@/services/api'
 import { Skeleton } from '@/components/ui/Skeleton'
 
 const STEPS = ['Your details', 'Your report', 'Review']
+const PERSONAL_KEYS = new Set([
+  'first_name',
+  'last_name',
+  'birth_date',
+  'gender',
+  'address',
+  'phone',
+  'email',
+])
+
+function stepForErrors(errors: Record<string, string>) {
+  const keys = Object.keys(errors)
+  if (keys.some((key) => PERSONAL_KEYS.has(key))) return 1
+  if (keys.some((key) => key === 'category_id' || key === 'title' || key === 'description')) return 2
+  return 3
+}
 
 interface FormValues {
   first_name: string
@@ -35,7 +51,7 @@ interface FormValues {
   title: string
   category_id: string
   description: string
-  website: string
+  tp_hp: string
 }
 
 const emptyValues: FormValues = {
@@ -49,7 +65,7 @@ const emptyValues: FormValues = {
   title: '',
   category_id: '',
   description: '',
-  website: '',
+  tp_hp: '',
 }
 
 export function ReportForm() {
@@ -64,21 +80,26 @@ export function ReportForm() {
   const [formError, setFormError] = useState<string | null>(null)
 
   useEffect(() => {
-    let cancelled = false
-    fetchCategories()
-      .then((response) => {
-        if (!cancelled) setCategories(response.categories)
-      })
-      .catch(() => {
-        if (!cancelled) setCategoryError('Something went wrong. Please try again.')
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingCategories(false)
-      })
-    return () => {
-      cancelled = true
-    }
+    void loadCategories()
   }, [])
+
+  async function loadCategories() {
+    setLoadingCategories(true)
+    setCategoryError(null)
+    try {
+      const response = await fetchCategories()
+      setCategories(response.categories)
+      if (response.categories.length === 0) {
+        setCategoryError('No categories are available yet. Please try again later.')
+      }
+    } catch (error) {
+      setCategoryError(
+        error instanceof ApiError ? error.message : 'Could not load categories. Please try again.',
+      )
+    } finally {
+      setLoadingCategories(false)
+    }
+  }
 
   const categoryName = useMemo(
     () => categories.find((category) => category.id === values.category_id)?.name ?? 'Not selected',
@@ -123,8 +144,9 @@ export function ReportForm() {
     }
     const parsed = createReportSchema.safeParse(payload)
     if (!parsed.success) {
-      setErrors(fieldErrors(parsed.error))
-      setStep(1)
+      const nextErrors = fieldErrors(parsed.error)
+      setErrors(nextErrors)
+      setStep(stepForErrors(nextErrors))
       setFormError('Please check the information you submitted.')
       return
     }
@@ -144,11 +166,13 @@ export function ReportForm() {
     } catch (error) {
       if (error instanceof ApiError) {
         if (error.details && typeof error.details === 'object' && !Array.isArray(error.details)) {
-          setErrors(error.details as Record<string, string>)
+          const nextErrors = error.details as Record<string, string>
+          setErrors(nextErrors)
+          setStep(stepForErrors(nextErrors))
         }
         setFormError(error.message || 'Unable to submit your report.')
       } else {
-        setFormError('Unable to submit your report.')
+        setFormError('Unable to submit your report. Check your connection and try again.')
       }
     } finally {
       setSubmitting(false)
@@ -157,7 +181,7 @@ export function ReportForm() {
 
   return (
     <Card>
-      <CardBody className="space-y-6 overflow-hidden p-5 md:p-8">
+      <CardBody className="space-y-6 p-5 md:p-8">
           <FormStepper steps={STEPS} current={step} />
 
           {formError ? (
@@ -179,14 +203,14 @@ export function ReportForm() {
             noValidate
           >
             <div className="absolute -left-[9999px] h-0 w-0 overflow-hidden" aria-hidden="true">
-              <label htmlFor="website">Website</label>
+              <label htmlFor="tp_hp">Company</label>
               <input
-                id="website"
-                name="website"
+                id="tp_hp"
+                name="tp_hp"
                 tabIndex={-1}
                 autoComplete="off"
-                value={values.website}
-                onChange={(event) => update('website', event.target.value)}
+                value={values.tp_hp}
+                onChange={(event) => update('tp_hp', event.target.value)}
               />
             </div>
 
@@ -269,9 +293,12 @@ export function ReportForm() {
                 {loadingCategories ? (
                   <Skeleton className="h-11" />
                 ) : categoryError ? (
-                  <p className="text-sm text-danger-700" role="alert">
-                    {categoryError}
-                  </p>
+                  <div className="space-y-2" role="alert">
+                    <p className="text-sm text-danger-700">{categoryError}</p>
+                    <Button type="button" variant="outline" size="sm" onClick={() => void loadCategories()}>
+                      Retry
+                    </Button>
+                  </div>
                 ) : (
                   <Field id="category_id" label="Category" required error={errors.category_id}>
                     <Select
@@ -347,7 +374,15 @@ export function ReportForm() {
               ) : (
                 <span />
               )}
-              <Button type="submit" loading={submitting} disabled={loadingCategories || Boolean(categoryError)}>
+              <Button
+                type="submit"
+                loading={submitting}
+                disabled={
+                  submitting ||
+                  (step >= 2 && loadingCategories) ||
+                  (step === 3 && (categories.length === 0 || Boolean(categoryError)))
+                }
+              >
                 {step < 3 ? 'Continue' : 'Submit report'}
               </Button>
             </div>

@@ -198,6 +198,7 @@ export const reportFieldsSchema = z.object({
 export const createReportSchema = personalFieldsSchema.extend(reportFieldsSchema.shape).extend({
   location: locationSchema,
   website: z.string().optional(),
+  tp_hp: z.string().optional(),
   captcha_token: z.string().max(2048).optional(),
 })
 

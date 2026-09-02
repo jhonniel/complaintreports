@@ -15,6 +15,7 @@ function toPlain(error: unknown): unknown {
       message: typeof record.message === 'string' ? record.message : undefined,
       code: typeof record.code === 'string' ? record.code : undefined,
       details: typeof record.details === 'string' ? record.details : undefined,
+      hint: typeof record.hint === 'string' ? record.hint : undefined,
     }
   }
   return { message: 'Unknown error' }
