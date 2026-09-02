@@ -1,0 +1,72 @@
+import type {
+  AdminActorRef,
+  AdminReportDetail,
+  AdminReportListQuery,
+  AdminReportListResult,
+  AssignReportInput,
+  StaffOption,
+  UpdatePriorityInput,
+  UpdateStatusInput,
+} from '../../shared/adminReport.ts'
+import type { AnalyticsQuery, AnalyticsResponse } from '../../shared/analytics.ts'
+import type {
+  CatalogCreateInput,
+  CatalogItem,
+  CatalogUpdateInput,
+} from '../../shared/catalog.ts'
+import type {
+  AccessMapQuery,
+  CreateAccessLogInput,
+  MapAccessCluster,
+  MapFilterQuery,
+  MapReportPoint,
+} from '../../shared/map.ts'
+import type { CreateReportInput, PublicCategory, PublicTrackView } from '../../shared/report.ts'
+
+export interface CreatedReport {
+  id: string
+  ticket_number: string
+  status: 'submitted'
+  created_at: string
+  category_name: string
+}
+
+export interface StoredAccessLogInput extends CreateAccessLogInput {
+  user_agent: string | null
+}
+
+export interface ReportStore {
+  mode: 'local' | 'supabase'
+  listPublicCategories(): Promise<PublicCategory[]>
+  createReport(input: CreateReportInput): Promise<CreatedReport>
+  findPublicByTicket(ticketNumber: string): Promise<PublicTrackView | null>
+  getAnalytics(query: AnalyticsQuery): Promise<AnalyticsResponse>
+  listAdminReports(query: AdminReportListQuery): Promise<AdminReportListResult>
+  getAdminReport(ticketNumber: string): Promise<AdminReportDetail | null>
+  updateReportStatus(
+    ticketNumber: string,
+    input: UpdateStatusInput,
+    actor: AdminActorRef,
+  ): Promise<AdminReportDetail>
+  updateReportPriority(
+    ticketNumber: string,
+    input: UpdatePriorityInput,
+    actor: AdminActorRef,
+  ): Promise<AdminReportDetail>
+  assignReport(
+    ticketNumber: string,
+    input: AssignReportInput,
+    actor: AdminActorRef,
+  ): Promise<AdminReportDetail>
+  addReportNote(ticketNumber: string, note: string, actor: AdminActorRef): Promise<AdminReportDetail>
+  listAdminCategories(): Promise<CatalogItem[]>
+  createCategory(input: CatalogCreateInput): Promise<CatalogItem>
+  updateCategory(id: string, input: CatalogUpdateInput): Promise<CatalogItem>
+  listDepartments(): Promise<CatalogItem[]>
+  createDepartment(input: CatalogCreateInput): Promise<CatalogItem>
+  updateDepartment(id: string, input: CatalogUpdateInput): Promise<CatalogItem>
+  listStaff(): Promise<StaffOption[]>
+  createAccessLog(input: StoredAccessLogInput): Promise<void>
+  listMapReports(query: MapFilterQuery): Promise<MapReportPoint[]>
+  listMapAccess(query: AccessMapQuery): Promise<MapAccessCluster[]>
+}

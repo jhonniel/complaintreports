@@ -1,0 +1,770 @@
+import { isAdminRole, type AdminRole } from '../../shared/auth.ts'
+import type { AdminNoteItem, AdminReportDetail, AdminStatusHistoryItem } from '../../shared/adminReport.ts'
+import { isGender, isReportPriority, isReportStatus, normalizePhilippineMobile, type ReportPriority, type ReportStatus } from '../../shared/report.ts'
+import { normalizeAccessPage } from '../../shared/map.ts'
+import { buildAnalytics, reporterFingerprint } from '../lib/analytics.ts'
+import {
+  DepartmentNotFoundError,
+  filterAdminReports,
+  locationFrom,
+  paginateAdminReports,
+  ReportNotFoundError,
+  StaffNotFoundError,
+  type AdminReportRecord,
+} from '../lib/adminReports.ts'
+import { aggregateAccessLogs, mapFilterAsListQuery } from '../lib/mapAccess.ts'
+import { getSupabaseAdminClient } from '../lib/supabase.ts'
+import {
+  CatalogItemNotFoundError,
+  DuplicateCatalogNameError,
+  LastActiveCategoryError,
+} from '../lib/catalog.ts'
+import type { SupabaseClient } from '@supabase/supabase-js'
+import type { CatalogItem } from '../../shared/catalog.ts'
+import { hasDuplicateCatalogName } from '../../shared/catalog.ts'
+import { logError } from '../lib/log.ts'
+import { CategoryNotFoundError } from './localStore.ts'
+import type { CreatedReport, ReportStore } from './types.ts'
+
+function asName(value: unknown): string | null {
+  const relation = value as { name?: string } | { name?: string }[] | null
+  if (Array.isArray(relation)) return relation[0]?.name ?? null
+  return relation?.name ?? null
+}
+
+function asStatus(value: unknown): ReportStatus {
+  return typeof value === 'string' && isReportStatus(value) ? value : 'submitted'
+}
+
+function asPriority(value: unknown): ReportPriority {
+  return typeof value === 'string' && isReportPriority(value) ? value : 'medium'
+}
+
+function asGender(value: unknown) {
+  return typeof value === 'string' && isGender(value) ? value : 'prefer_not_to_say'
+}
+
+function toCatalogRow(row: Record<string, unknown>, usageCount: number): CatalogItem {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    description: typeof row.description === 'string' ? row.description : null,
+    is_active: row.is_active !== false,
+    created_at: row.created_at as string,
+    usage_count: usageCount,
+  }
+}
+
+async function usageCounts(db: SupabaseClient, column: 'category_id' | 'assigned_department_id') {
+  const { data, error } = await db.from('reports').select(column)
+  const counts = new Map<string, number>()
+  if (error) {
+    logError('store', error)
+    return counts
+  }
+  for (const row of data ?? []) {
+    const id = (row as Record<string, unknown>)[column]
+    if (typeof id === 'string') counts.set(id, (counts.get(id) ?? 0) + 1)
+  }
+  return counts
+}
+
+function isUniqueViolation(error: { code?: string } | null) {
+  return error?.code === '23505'
+}
+
+export function createSupabaseStore(): ReportStore | null {
+  const adminClient = getSupabaseAdminClient()
+  if (!adminClient) return null
+  const db: SupabaseClient = adminClient
+
+  async function profileNames(ids: string[]) {
+    const unique = [...new Set(ids.filter(Boolean))]
+    const names = new Map<string, string>()
+    if (!unique.length) return names
+    const { data, error } = await db.from('profiles').select('user_id, full_name').in('user_id', unique)
+    if (error) {
+      logError('store', error)
+      return names
+    }
+    for (const row of data ?? []) {
+      names.set(row.user_id as string, row.full_name as string)
+    }
+    return names
+  }
+
+  function toRecord(
+    row: Record<string, unknown>,
+    names: Map<string, string>,
+  ): AdminReportRecord {
+    const assignedAdminId = typeof row.assigned_admin_id === 'string' ? row.assigned_admin_id : null
+    return {
+      id: row.id as string,
+      ticket_number: row.ticket_number as string,
+      title: (row.title as string) ?? '',
+      description: (row.description as string) ?? '',
+      category_id: row.category_id as string,
+      category_name: asName(row.report_categories) ?? 'Other',
+      status: asStatus(row.status),
+      priority: asPriority(row.priority),
+      latitude: typeof row.latitude === 'number' ? row.latitude : null,
+      longitude: typeof row.longitude === 'number' ? row.longitude : null,
+      assigned_department_id: typeof row.assigned_department_id === 'string' ? row.assigned_department_id : null,
+      assigned_department_name: asName(row.departments),
+      assigned_admin_id: assignedAdminId,
+      assigned_admin_name: assignedAdminId ? names.get(assignedAdminId) ?? null : null,
+      created_at: row.created_at as string,
+      updated_at: row.updated_at as string,
+    }
+  }
+
+  async function loadHistory(reportId: string): Promise<AdminStatusHistoryItem[]> {
+    const { data, error } = await db
+      .from('report_status_history')
+      .select('id, previous_status, new_status, note, changed_by, created_at')
+      .eq('report_id', reportId)
+      .order('created_at', { ascending: true })
+
+    if (error) {
+      logError('store', error)
+      return []
+    }
+    const rows = data ?? []
+    const names = await profileNames(rows.map((row) => (typeof row.changed_by === 'string' ? row.changed_by : '')))
+    return rows.map((row) => ({
+      id: row.id as string,
+      previous_status:
+        typeof row.previous_status === 'string' && isReportStatus(row.previous_status) ? row.previous_status : null,
+      new_status: asStatus(row.new_status),
+      note: typeof row.note === 'string' ? row.note : null,
+      actor_name: typeof row.changed_by === 'string' ? names.get(row.changed_by) ?? 'Administrator' : 'Resident',
+      created_at: row.created_at as string,
+    }))
+  }
+
+  async function loadNotes(reportId: string): Promise<AdminNoteItem[]> {
+    const { data, error } = await db
+      .from('report_notes')
+      .select('id, note, admin_id, created_at')
+      .eq('report_id', reportId)
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      logError('store', error)
+      return []
+    }
+    const rows = data ?? []
+    const names = await profileNames(rows.map((row) => (typeof row.admin_id === 'string' ? row.admin_id : '')))
+    return rows.map((row) => ({
+      id: row.id as string,
+      note: row.note as string,
+      actor_name: names.get(row.admin_id as string) ?? 'Administrator',
+      created_at: row.created_at as string,
+    }))
+  }
+
+  async function loadDetail(ticketNumber: string): Promise<AdminReportDetail> {
+    const { data, error } = await db
+      .from('reports')
+      .select(
+        'id, ticket_number, title, description, status, priority, created_at, updated_at, latitude, longitude, location_accuracy, location_captured_at, assigned_department_id, assigned_admin_id, category_id, full_name, birth_date, gender, address, phone, email, report_categories ( name ), departments ( name )',
+      )
+      .eq('ticket_number', ticketNumber)
+      .maybeSingle()
+
+    if (error) {
+      logError('store', error)
+      throw new Error('STORAGE_UNAVAILABLE')
+    }
+    if (!data) throw new ReportNotFoundError()
+
+    const names = await profileNames(typeof data.assigned_admin_id === 'string' ? [data.assigned_admin_id] : [])
+    const record = toRecord(data as Record<string, unknown>, names)
+    const [history, notes] = await Promise.all([loadHistory(record.id), loadNotes(record.id)])
+
+    return {
+      id: record.id,
+      ticket_number: record.ticket_number,
+      title: record.title,
+      description: record.description,
+      category_id: record.category_id,
+      category_name: record.category_name,
+      status: record.status,
+      priority: record.priority,
+      reporter: {
+        full_name: data.full_name as string,
+        birth_date: data.birth_date as string,
+        gender: asGender(data.gender),
+        address: data.address as string,
+        phone: data.phone as string,
+        email: (data.email as string | null) ?? null,
+      },
+      location: locationFrom({
+        latitude: record.latitude,
+        longitude: record.longitude,
+        location_accuracy: typeof data.location_accuracy === 'number' ? data.location_accuracy : null,
+        location_captured_at: typeof data.location_captured_at === 'string' ? data.location_captured_at : null,
+      }),
+      assigned_department_id: record.assigned_department_id,
+      assigned_department_name: record.assigned_department_name,
+      assigned_admin_id: record.assigned_admin_id,
+      assigned_admin_name: record.assigned_admin_name,
+      created_at: record.created_at,
+      updated_at: record.updated_at,
+      history,
+      notes,
+    }
+  }
+
+  return {
+    mode: 'supabase',
+
+    async listPublicCategories() {
+      const { data, error } = await db
+        .from('report_categories')
+        .select('id, name, description')
+        .eq('is_active', true)
+        .order('name', { ascending: true })
+
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+
+      return (data ?? []).map((row) => ({
+        id: row.id as string,
+        name: row.name as string,
+        description: (row.description as string | null) ?? null,
+      }))
+    },
+
+    async createReport(input) {
+      const { data: category, error: categoryError } = await db
+        .from('report_categories')
+        .select('id, name, is_active')
+        .eq('id', input.category_id)
+        .maybeSingle()
+
+      if (categoryError) {
+        logError('store', categoryError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (!category || category.is_active === false) {
+        throw new CategoryNotFoundError()
+      }
+
+      const { data: ticketNumber, error: ticketError } = await db.rpc('next_ticket_number')
+      if (ticketError || typeof ticketNumber !== 'string') {
+        logError('store', ticketError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+
+      const now = new Date().toISOString()
+      const location = input.location ?? null
+      const insertPayload = {
+        ticket_number: ticketNumber,
+        full_name: input.full_name.trim(),
+        birth_date: input.birth_date,
+        gender: input.gender,
+        address: input.address.trim(),
+        phone: normalizePhilippineMobile(input.phone),
+        email: input.email?.trim() ? input.email.trim() : null,
+        category_id: category.id,
+        title: input.title.trim(),
+        description: input.description.trim(),
+        status: 'submitted',
+        priority: 'medium',
+        latitude: location?.latitude ?? null,
+        longitude: location?.longitude ?? null,
+        location_accuracy: location?.accuracy ?? null,
+        location_captured_at: location?.timestamp ?? null,
+        created_at: now,
+        updated_at: now,
+      }
+
+      const { data: report, error: insertError } = await db
+        .from('reports')
+        .insert(insertPayload)
+        .select('id, ticket_number, created_at')
+        .single()
+
+      if (insertError || !report) {
+        logError('store', insertError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+
+      const { error: historyError } = await db.from('report_status_history').insert({
+        report_id: report.id,
+        previous_status: null,
+        new_status: 'submitted',
+        note: 'Report submitted by a resident.',
+        changed_by: null,
+        created_at: now,
+      })
+
+      if (historyError) {
+        logError('store', historyError)
+      }
+
+      const created: CreatedReport = {
+        id: report.id as string,
+        ticket_number: report.ticket_number as string,
+        status: 'submitted',
+        created_at: report.created_at as string,
+        category_name: category.name as string,
+      }
+      return created
+    },
+
+    async findPublicByTicket(ticketNumber) {
+      const { data, error } = await db
+        .from('reports')
+        .select('ticket_number, status, created_at, updated_at, report_categories ( name )')
+        .eq('ticket_number', ticketNumber)
+        .maybeSingle()
+
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (!data) return null
+
+      return {
+        ticket_number: data.ticket_number as string,
+        status: asStatus(data.status),
+        category_name: asName(data.report_categories) ?? 'Other',
+        created_at: data.created_at as string,
+        updated_at: data.updated_at as string,
+      }
+    },
+
+    async getAnalytics(query) {
+      const { data, error } = await db
+        .from('reports')
+        .select('status, phone, created_at, latitude, longitude, assigned_department_id, report_categories ( name ), departments ( name )')
+
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+
+      const rows = (data ?? []).map((row) => {
+        const phone = typeof row.phone === 'string' ? row.phone : ''
+        return {
+          status: asStatus(row.status),
+          categoryName: asName(row.report_categories) ?? 'Other',
+          departmentName: asName(row.departments),
+          reporterKey: reporterFingerprint(phone),
+          createdAt: row.created_at as string,
+          latitude: typeof row.latitude === 'number' ? row.latitude : null,
+          longitude: typeof row.longitude === 'number' ? row.longitude : null,
+        }
+      })
+      return buildAnalytics(rows, query)
+    },
+
+    async listAdminReports(query) {
+      const { data, error } = await db
+        .from('reports')
+        .select(
+          'id, ticket_number, title, description, status, priority, created_at, updated_at, latitude, longitude, assigned_department_id, assigned_admin_id, category_id, report_categories ( name ), departments ( name )',
+        )
+
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+
+      const rows = data ?? []
+      const names = await profileNames(
+        rows.map((row) => (typeof row.assigned_admin_id === 'string' ? row.assigned_admin_id : '')),
+      )
+      return paginateAdminReports(
+        rows.map((row) => toRecord(row as Record<string, unknown>, names)),
+        query,
+      )
+    },
+
+    async getAdminReport(ticketNumber) {
+      try {
+        return await loadDetail(ticketNumber)
+      } catch (error) {
+        if (error instanceof ReportNotFoundError) return null
+        throw error
+      }
+    },
+
+    async updateReportStatus(ticketNumber, input, actor) {
+      const current = await loadDetail(ticketNumber)
+      const now = new Date().toISOString()
+      const { error: updateError } = await db
+        .from('reports')
+        .update({ status: input.status, updated_at: now })
+        .eq('id', current.id)
+
+      if (updateError) {
+        logError('store', updateError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+
+      const { error: historyError } = await db.from('report_status_history').insert({
+        report_id: current.id,
+        previous_status: current.status,
+        new_status: input.status,
+        note: input.note?.trim() ? input.note.trim() : null,
+        changed_by: actor.userId,
+        created_at: now,
+      })
+      if (historyError) logError('store', historyError)
+      return loadDetail(ticketNumber)
+    },
+
+    async updateReportPriority(ticketNumber, input, _actor) {
+      const current = await loadDetail(ticketNumber)
+      const { error } = await db
+        .from('reports')
+        .update({ priority: input.priority, updated_at: new Date().toISOString() })
+        .eq('id', current.id)
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      return loadDetail(ticketNumber)
+    },
+
+    async assignReport(ticketNumber, input, _actor) {
+      const current = await loadDetail(ticketNumber)
+      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+
+      if (input.department_id !== undefined) {
+        if (input.department_id === null) {
+          patch.assigned_department_id = null
+        } else {
+          const { data: department, error } = await db
+            .from('departments')
+            .select('id, is_active')
+            .eq('id', input.department_id)
+            .maybeSingle()
+          if (error) {
+            logError('store', error)
+            throw new Error('STORAGE_UNAVAILABLE')
+          }
+          if (!department || department.is_active === false) throw new DepartmentNotFoundError()
+          patch.assigned_department_id = department.id
+        }
+      }
+
+      if (input.admin_id !== undefined) {
+        if (input.admin_id === null) {
+          patch.assigned_admin_id = null
+        } else {
+          const { data: profile, error } = await db
+            .from('profiles')
+            .select('user_id, role')
+            .eq('user_id', input.admin_id)
+            .maybeSingle()
+          if (error) {
+            logError('store', error)
+            throw new Error('STORAGE_UNAVAILABLE')
+          }
+          const role = typeof profile?.role === 'string' ? profile.role : ''
+          if (!profile || !isAdminRole(role)) throw new StaffNotFoundError()
+          patch.assigned_admin_id = profile.user_id
+        }
+      }
+
+      const { error: updateError } = await db.from('reports').update(patch).eq('id', current.id)
+      if (updateError) {
+        logError('store', updateError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      return loadDetail(ticketNumber)
+    },
+
+    async addReportNote(ticketNumber, note, actor) {
+      const current = await loadDetail(ticketNumber)
+      const now = new Date().toISOString()
+      const { error } = await db.from('report_notes').insert({
+        report_id: current.id,
+        admin_id: actor.userId,
+        note,
+        created_at: now,
+      })
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      await db.from('reports').update({ updated_at: now }).eq('id', current.id)
+      return loadDetail(ticketNumber)
+    },
+
+    async listAdminCategories() {
+      const [{ data, error }, usage] = await Promise.all([
+        db.from('report_categories').select('id, name, description, is_active, created_at').order('name'),
+        usageCounts(db, 'category_id'),
+      ])
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      return (data ?? []).map((row) => toCatalogRow(row, usage.get(row.id as string) ?? 0))
+    },
+
+    async createCategory(input) {
+      const { data: existing, error: existingError } = await db
+        .from('report_categories')
+        .select('id, name')
+      if (existingError) {
+        logError('store', existingError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (hasDuplicateCatalogName(existing ?? [], input.name)) {
+        throw new DuplicateCatalogNameError('category')
+      }
+      const { data, error } = await db
+        .from('report_categories')
+        .insert({
+          name: input.name,
+          description: input.description,
+          is_active: input.is_active,
+        })
+        .select('id, name, description, is_active, created_at')
+        .single()
+      if (error || !data) {
+        if (isUniqueViolation(error)) throw new DuplicateCatalogNameError('category')
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      return toCatalogRow(data, 0)
+    },
+
+    async updateCategory(id, input) {
+      const { data: current, error: currentError } = await db
+        .from('report_categories')
+        .select('id, name, description, is_active, created_at')
+        .eq('id', id)
+        .maybeSingle()
+      if (currentError) {
+        logError('store', currentError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (!current) throw new CatalogItemNotFoundError('category')
+
+      if (input.name !== undefined) {
+        const { data: names, error: namesError } = await db.from('report_categories').select('id, name')
+        if (namesError) {
+          logError('store', namesError)
+          throw new Error('STORAGE_UNAVAILABLE')
+        }
+        if (hasDuplicateCatalogName(names ?? [], input.name, id)) {
+          throw new DuplicateCatalogNameError('category')
+        }
+      }
+
+      if (input.is_active === false && current.is_active !== false) {
+        const { data: active, error: activeError } = await db
+          .from('report_categories')
+          .select('id')
+          .eq('is_active', true)
+          .neq('id', id)
+        if (activeError) {
+          logError('store', activeError)
+          throw new Error('STORAGE_UNAVAILABLE')
+        }
+        if (!active?.length) throw new LastActiveCategoryError()
+      }
+
+      const { data, error } = await db
+        .from('report_categories')
+        .update({
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.description !== undefined ? { description: input.description } : {}),
+          ...(input.is_active !== undefined ? { is_active: input.is_active } : {}),
+        })
+        .eq('id', id)
+        .select('id, name, description, is_active, created_at')
+        .single()
+      if (error || !data) {
+        if (isUniqueViolation(error)) throw new DuplicateCatalogNameError('category')
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      const usage = await usageCounts(db, 'category_id')
+      return toCatalogRow(data, usage.get(id) ?? 0)
+    },
+
+    async listDepartments() {
+      const [{ data, error }, usage] = await Promise.all([
+        db.from('departments').select('id, name, description, is_active, created_at').order('name'),
+        usageCounts(db, 'assigned_department_id'),
+      ])
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      return (data ?? []).map((row) => toCatalogRow(row, usage.get(row.id as string) ?? 0))
+    },
+
+    async createDepartment(input) {
+      const { data: existing, error: existingError } = await db.from('departments').select('id, name')
+      if (existingError) {
+        logError('store', existingError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (hasDuplicateCatalogName(existing ?? [], input.name)) {
+        throw new DuplicateCatalogNameError('department')
+      }
+      const { data, error } = await db
+        .from('departments')
+        .insert({
+          name: input.name,
+          description: input.description,
+          is_active: input.is_active,
+        })
+        .select('id, name, description, is_active, created_at')
+        .single()
+      if (error || !data) {
+        if (isUniqueViolation(error)) throw new DuplicateCatalogNameError('department')
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      return toCatalogRow(data, 0)
+    },
+
+    async updateDepartment(id, input) {
+      const { data: current, error: currentError } = await db
+        .from('departments')
+        .select('id, name, description, is_active, created_at')
+        .eq('id', id)
+        .maybeSingle()
+      if (currentError) {
+        logError('store', currentError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (!current) throw new CatalogItemNotFoundError('department')
+
+      if (input.name !== undefined) {
+        const { data: names, error: namesError } = await db.from('departments').select('id, name')
+        if (namesError) {
+          logError('store', namesError)
+          throw new Error('STORAGE_UNAVAILABLE')
+        }
+        if (hasDuplicateCatalogName(names ?? [], input.name, id)) {
+          throw new DuplicateCatalogNameError('department')
+        }
+      }
+
+      const { data, error } = await db
+        .from('departments')
+        .update({
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.description !== undefined ? { description: input.description } : {}),
+          ...(input.is_active !== undefined ? { is_active: input.is_active } : {}),
+        })
+        .eq('id', id)
+        .select('id, name, description, is_active, created_at')
+        .single()
+      if (error || !data) {
+        if (isUniqueViolation(error)) throw new DuplicateCatalogNameError('department')
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      const usage = await usageCounts(db, 'assigned_department_id')
+      return toCatalogRow(data, usage.get(id) ?? 0)
+    },
+
+    async listStaff() {
+      const { data, error } = await db.from('profiles').select('user_id, full_name, role').order('full_name')
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      return (data ?? [])
+        .filter((row) => isAdminRole(typeof row.role === 'string' ? row.role : ''))
+        .map((row) => ({
+          user_id: row.user_id as string,
+          full_name: row.full_name as string,
+          role: row.role as AdminRole,
+        }))
+    },
+
+    async createAccessLog(input) {
+      const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString()
+      const { data: existing, error: existingError } = await db
+        .from('access_logs')
+        .select('id')
+        .eq('session_id', input.session_id)
+        .gte('created_at', cutoff)
+        .limit(1)
+      if (existingError) {
+        logError('store', existingError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (existing && existing.length > 0) return
+
+      const { error } = await db.from('access_logs').insert({
+        session_id: input.session_id,
+        latitude: input.latitude,
+        longitude: input.longitude,
+        accuracy: input.accuracy ?? null,
+        page: normalizeAccessPage(input.page),
+        user_agent: input.user_agent,
+        created_at: new Date().toISOString(),
+      })
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+    },
+
+    async listMapReports(query) {
+      const { data, error } = await db
+        .from('reports')
+        .select(
+          'id, ticket_number, title, description, status, priority, created_at, updated_at, latitude, longitude, assigned_department_id, assigned_admin_id, category_id, report_categories ( name ), departments ( name )',
+        )
+        .not('latitude', 'is', null)
+        .not('longitude', 'is', null)
+
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+
+      const rows = data ?? []
+      const names = await profileNames(
+        rows.map((row) => (typeof row.assigned_admin_id === 'string' ? row.assigned_admin_id : '')),
+      )
+      return filterAdminReports(
+        rows.map((row) => toRecord(row as Record<string, unknown>, names)),
+        mapFilterAsListQuery(query),
+      )
+        .filter((record) => record.latitude != null && record.longitude != null)
+        .map((record) => ({
+          ticket_number: record.ticket_number,
+          category_name: record.category_name,
+          status: record.status,
+          priority: record.priority,
+          created_at: record.created_at,
+          latitude: record.latitude as number,
+          longitude: record.longitude as number,
+        }))
+    },
+
+    async listMapAccess(query) {
+      const { data, error } = await db.from('access_logs').select('latitude, longitude, created_at')
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      return aggregateAccessLogs(
+        (data ?? []).map((row) => ({
+          latitude: Number(row.latitude),
+          longitude: Number(row.longitude),
+          createdAt: row.created_at as string,
+        })),
+        query,
+      )
+    },
+  }
+}
