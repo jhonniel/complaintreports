@@ -40,8 +40,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       errorBody?.error ??
       (response.status === 503
         ? 'The service is temporarily unavailable.'
-        : 'Something went wrong. Please try again.')
+        : response.status >= 500
+          ? 'The server could not complete this request. Please try again in a moment.'
+          : 'Something went wrong. Please try again.')
     throw new ApiError(message, response.status, errorBody?.details)
+  }
+
+  if (!isJson || body == null) {
+    throw new ApiError('The server returned an unexpected response. Please try again.', response.status)
   }
 
   return body as T

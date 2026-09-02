@@ -30,6 +30,14 @@ publicRouter.get(
       res.json({ categories: categories.map(toPublicCategory) })
     } catch (error) {
       logError('public.categories', error)
+      if (error instanceof Error && error.message === 'STORAGE_UNAVAILABLE') {
+        sendError(
+          res,
+          503,
+          'The service is temporarily unavailable. Please try again in a moment.',
+        )
+        return
+      }
       sendError(res, 500, 'Something went wrong. Please try again.')
     }
   }),

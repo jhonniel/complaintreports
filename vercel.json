@@ -6,11 +6,11 @@
   "functions": {
     "api/index.ts": {
       "maxDuration": 30,
-      "includeFiles": "shared/**"
+      "includeFiles": "{shared,server}/**"
     },
     "api/[...slug].ts": {
       "maxDuration": 30,
-      "includeFiles": "shared/**"
+      "includeFiles": "{shared,server}/**"
     }
   },
   "rewrites": [

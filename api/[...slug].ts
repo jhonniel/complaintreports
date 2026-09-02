@@ -5,9 +5,6 @@ void ensureSupabaseSeed()
 
 export const config = {
   maxDuration: 30,
-  api: {
-    bodyParser: false,
-  },
 }
 
 export default app

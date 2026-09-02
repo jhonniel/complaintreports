@@ -9,38 +9,24 @@ function parseRawJson(raw: string) {
 }
 
 export function parseJsonBody(req: Request, res: Response, next: NextFunction) {
-  const existing = req.body as unknown
-  if (existing && typeof existing === 'object' && !Buffer.isBuffer(existing) && !Array.isArray(existing)) {
-    if (Object.keys(existing as object).length > 0) {
+  try {
+    const existing = req.body as unknown
+    if (Buffer.isBuffer(existing)) {
+      req.body = parseRawJson(existing.toString('utf8'))
       next()
       return
     }
-  }
-
-  if (Buffer.isBuffer(existing)) {
-    try {
-      req.body = parseRawJson(existing.toString('utf8'))
-    } catch {
-      res.status(400).json({ error: 'Please check the information you submitted.' })
-      return
-    }
-    next()
-    return
-  }
-
-  if (typeof existing === 'string') {
-    try {
+    if (typeof existing === 'string') {
       req.body = parseRawJson(existing)
-    } catch {
-      res.status(400).json({ error: 'Please check the information you submitted.' })
+      next()
       return
     }
-    next()
-    return
-  }
-
-  if (req.readableEnded) {
-    next()
+    if (existing && typeof existing === 'object' && !Array.isArray(existing) && Object.keys(existing).length > 0) {
+      next()
+      return
+    }
+  } catch {
+    res.status(400).json({ error: 'Please check the information you submitted.' })
     return
   }
 
