@@ -1,4 +1,4 @@
-import { MANILA_TIME_ZONE, PRIORITY_RANK, type ReportPriority, type ReportStatus } from '../../shared/report.ts'
+import { MANILA_TIME_ZONE, PRIORITY_RANK, normalizeTicketNumber, type ReportPriority, type ReportStatus } from '../../shared/report.ts'
 import type {
   AdminReportDetail,
   AdminReportListItem,
@@ -97,10 +97,11 @@ export function filterAdminReports(records: AdminReportRecord[], query: AdminRep
     if (query.date_from && manilaDateKey(record.created_at) < query.date_from) return false
     if (query.date_to && manilaDateKey(record.created_at) > query.date_to) return false
     if (!needle) return true
+    const ticketNeedle = normalizeTicketNumber(query.q).toLowerCase()
     const haystack = [record.ticket_number, record.category_name, record.title, record.description]
       .join(' ')
       .toLowerCase()
-    return haystack.includes(needle)
+    return haystack.includes(needle) || record.ticket_number.toLowerCase().includes(ticketNeedle)
   })
 }
 

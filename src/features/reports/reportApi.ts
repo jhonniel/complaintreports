@@ -10,5 +10,6 @@ export function submitReport(payload: unknown) {
 }
 
 export function trackReport(ticketNumber: string) {
-  return api.get<PublicTrackView>(`/reports/track/${encodeURIComponent(ticketNumber)}`)
+  const params = new URLSearchParams({ ticket: ticketNumber })
+  return api.get<PublicTrackView>(`/track?${params.toString()}`)
 }

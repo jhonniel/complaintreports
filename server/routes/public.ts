@@ -98,27 +98,54 @@ publicRouter.post(
   }),
 )
 
+function readTicketQuery(req: { query: { ticket?: unknown } }) {
+  const raw = req.query.ticket
+  if (typeof raw === 'string') return raw
+  if (Array.isArray(raw) && typeof raw[0] === 'string') return raw[0]
+  return ''
+}
+
+async function sendPublicTrack(res: Parameters<typeof sendError>[0], rawTicket: string) {
+  const ticketNumber = normalizeTicketNumber(rawTicket)
+  if (!ticketNumber) {
+    sendError(res, 400, 'Enter your ticket number.')
+    return
+  }
+  if (!isTicketNumber(ticketNumber)) {
+    sendError(res, 400, 'Enter a valid ticket number.')
+    return
+  }
+  try {
+    const report = await getReportStore().findPublicByTicket(ticketNumber)
+    if (!report) {
+      sendError(res, 404, 'Ticket number not found.')
+      return
+    }
+    res.json(toPublicTrackView(report))
+  } catch (error) {
+    logError('public.track', error)
+    if (error instanceof Error && error.message === 'STORAGE_UNAVAILABLE') {
+      sendError(res, 503, 'The service is temporarily unavailable. Please try again in a moment.')
+      return
+    }
+    sendError(res, 500, 'Something went wrong. Please try again.')
+  }
+}
+
+publicRouter.get(
+  '/track',
+  publicReadLimiter,
+  asyncHandler(async (req, res) => {
+    await sendPublicTrack(res, readTicketQuery(req))
+  }),
+)
+
 publicRouter.get(
   '/reports/track/:ticketNumber',
   publicReadLimiter,
   asyncHandler(async (req, res) => {
     const rawTicket = req.params.ticketNumber
-    const ticketNumber = normalizeTicketNumber(Array.isArray(rawTicket) ? rawTicket[0] ?? '' : rawTicket ?? '')
-    if (!isTicketNumber(ticketNumber)) {
-      sendError(res, 400, 'Enter a valid ticket number.')
-      return
-    }
-    try {
-      const report = await getReportStore().findPublicByTicket(ticketNumber)
-      if (!report) {
-        sendError(res, 404, 'Ticket number not found.')
-        return
-      }
-      res.json(toPublicTrackView(report))
-    } catch (error) {
-      logError('public.track', error)
-      sendError(res, 500, 'Something went wrong. Please try again.')
-    }
+    await sendPublicTrack(res, Array.isArray(rawTicket) ? rawTicket[0] ?? '' : rawTicket ?? '')
   }),
 )
 

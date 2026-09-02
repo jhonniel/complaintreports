@@ -48,7 +48,11 @@ export function formatTicketNumber(year: number, sequence: number) {
 }
 
 export function normalizeTicketNumber(value: string) {
-  return value.trim().toUpperCase().replace(/\s+/g, '')
+  const compact = value.trim().toUpperCase().replace(/[\s_]+/g, '').replace(/[–—]/g, '-')
+  const rest = compact.replace(/^TP-?/, '').replace(/-/g, '')
+  const match = /^(\d{4})(\d{1,6})$/.exec(rest)
+  if (match) return `TP-${match[1]}-${match[2].padStart(6, '0')}`
+  return compact
 }
 
 export function isTicketNumber(value: string) {
