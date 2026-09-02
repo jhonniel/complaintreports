@@ -8,21 +8,17 @@ export function PrivacyPage() {
       <div className="mt-6 space-y-4 text-base leading-relaxed text-ink-700">
         <p>
           {APP_NAME} collects personal information only to process civic reports. This includes
-          your name, birth date, gender, address, phone number, optional email, the report itself,
-          and location if you grant permission.
+          your name, birth date, gender, address, phone number, optional email, and the report
+          itself.
         </p>
         <p>
-          Public pages never display your full name, phone number, email, address, or exact
-          personal location. Only authorized administrators can view personally identifiable
-          information.
+          Public pages never display your full name, phone number, email, or address. Only
+          authorized administrators can view personally identifiable information.
         </p>
         <p>
-          Location permission is optional. If you decline, you can still submit a report. Access
-          location (where you used the site) is stored separately from report location (where the
-          concern happened) and is not shown publicly. Ticket tracking shows status and category
-          only.
+          Ticket tracking shows status and category only. This policy will be expanded before
+          production launch.
         </p>
-        <p>This policy will be expanded before production launch.</p>
       </div>
     </article>
   )

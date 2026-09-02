@@ -17,7 +17,7 @@ export function PublicFooter() {
           <Logo tone="light" />
           <p className="mt-4 max-w-sm text-sm leading-relaxed text-pine-100/80">
             A civic reporting platform for residents of {CITY_NAME}. Submit concerns, receive a
-            ticket, and follow progress — no account required.
+            ticket, and follow progress.
           </p>
         </div>
         <div>
@@ -39,11 +39,10 @@ export function PublicFooter() {
         </div>
       </div>
       <div className="border-t border-white/10">
-        <div className="container-page flex flex-col gap-2 py-4 text-xs text-pine-200/70 sm:flex-row sm:items-center sm:justify-between">
+        <div className="container-page py-4 text-xs text-pine-200/70">
           <p>
             © {new Date().getFullYear()} {APP_NAME}. Built for public service.
           </p>
-          <p>Personal information is never shown on public pages.</p>
         </div>
       </div>
     </footer>

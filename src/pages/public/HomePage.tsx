@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { ArrowRight, Lock, MessageSquareHeart, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody } from '@/components/ui/Card'
+import { cn } from '@/lib/cn'
 
 const steps = [
   { n: '01', title: 'Submit your concern', body: 'Tell us what happened and where. No account is required.' },
@@ -19,7 +20,7 @@ const trust = [
   {
     icon: Lock,
     title: 'Personal information is protected',
-    body: 'Your name, contact details, and exact personal location are never shown on public pages.',
+    body: 'Your name and contact details are never shown on public pages.',
   },
   {
     icon: MessageSquareHeart,
@@ -39,11 +40,11 @@ export function HomePage() {
               Civic reporting for Kidapawan City
             </p>
             <h1 className="mt-4 font-display text-4xl font-semibold text-ink-950 sm:text-5xl lg:text-[3.4rem] lg:leading-[1.1]">
-              Your Voice. Your Community. Your Tingog.
+              SUMBUNGAN SA KIDAPAWAN. PARA SA TANAN. TINGOG MGA KIDAPAWEÑO!
             </h1>
             <p className="mt-5 max-w-xl text-base leading-relaxed text-ink-600 md:text-lg">
               Residents can submit complaints, concerns, and reports to help improve public
-              services in Kidapawan — without creating an account.
+              services in Kidapawan.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link to="/submit">
@@ -59,7 +60,7 @@ export function HomePage() {
               </Link>
             </div>
           </div>
-          <Card className="animate-fade-up overflow-hidden">
+          <Card className="animate-fade-up animate-delay-2 overflow-hidden">
             <div className="bg-pine-900 px-5 py-4 text-pine-50">
               <p className="text-xs font-semibold tracking-[0.16em] text-earth-400 uppercase">
                 How a ticket looks
@@ -78,10 +79,6 @@ export function HomePage() {
                 </li>
                 <li className="flex gap-2">
                   <span className="mt-1 size-1.5 rounded-full bg-pine-600" />
-                  Location sharing is optional
-                </li>
-                <li className="flex gap-2">
-                  <span className="mt-1 size-1.5 rounded-full bg-pine-600" />
                   Status updates stay on your ticket, not on a public feed
                 </li>
               </ul>
@@ -96,8 +93,16 @@ export function HomePage() {
           Four simple steps from concern to follow-up. No account is required.
         </p>
         <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {steps.map((step) => (
-            <li key={step.n} className="rounded-xl border border-ink-200 bg-white p-5 shadow-card">
+          {steps.map((step, index) => (
+            <li
+              key={step.n}
+              className={cn(
+                'animate-fade-up rounded-xl border border-ink-200 bg-white p-5 shadow-card transition-shadow duration-300 hover:shadow-raised',
+                index === 1 && 'animate-delay-1',
+                index === 2 && 'animate-delay-2',
+                index === 3 && 'animate-delay-3',
+              )}
+            >
               <p className="font-mono text-sm font-medium text-earth-600">{step.n}</p>
               <h3 className="mt-3 font-display text-xl font-semibold">{step.title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-ink-600">{step.body}</p>
@@ -108,8 +113,15 @@ export function HomePage() {
 
       <section className="border-y border-ink-200 bg-white">
         <div className="container-page grid gap-6 py-16 md:grid-cols-3 md:py-20">
-          {trust.map((item) => (
-            <div key={item.title}>
+          {trust.map((item, index) => (
+            <div
+              key={item.title}
+              className={cn(
+                'animate-fade-up',
+                index === 1 && 'animate-delay-1',
+                index === 2 && 'animate-delay-2',
+              )}
+            >
               <item.icon className="size-6 text-pine-700" aria-hidden="true" />
               <h3 className="mt-4 font-display text-xl font-semibold">{item.title}</h3>
               <p className="mt-2 text-sm leading-relaxed text-ink-600">{item.body}</p>
@@ -121,7 +133,9 @@ export function HomePage() {
       <section className="container-page py-12 md:py-16">
         <div className="rounded-2xl bg-pine-900 px-6 py-8 text-pine-50 md:flex md:items-center md:justify-between md:px-10">
           <div>
-            <h2 className="font-display text-2xl font-semibold text-white md:text-3xl">Ready to report a concern?</h2>
+            <h2 className="font-display text-2xl font-semibold text-white md:text-3xl">
+              Ready to report a concern?
+            </h2>
             <p className="mt-2 max-w-xl text-sm text-pine-100/80">
               It takes a few minutes. You will receive a ticket number to save and track.
             </p>

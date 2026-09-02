@@ -8,8 +8,8 @@ import {
   type ReactNode,
 } from 'react'
 import { isAdminRole, type AdminRole } from '@shared/auth'
+import { api, setAccessToken } from '@/services/api'
 import { isSupabaseConfigured, supabase } from '@/lib/supabase'
-import { setAccessToken } from '@/services/api'
 
 export interface AuthProfile {
   id: string
@@ -30,6 +30,37 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
+const DEV_SESSION_KEY = 'tingog_dev_admin'
+
+interface DevSessionPayload {
+  access_token: string
+  user_id: string
+  email: string | null
+  full_name: string
+  role: AdminRole
+  profile_id: string
+}
+
+function profileFromDev(session: DevSessionPayload): AuthProfile | null {
+  if (!isAdminRole(session.role)) return null
+  return {
+    id: session.profile_id,
+    userId: session.user_id,
+    fullName: session.full_name,
+    role: session.role,
+    email: session.email,
+  }
+}
+
+function readDevSession(): DevSessionPayload | null {
+  try {
+    const raw = sessionStorage.getItem(DEV_SESSION_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as DevSessionPayload
+  } catch {
+    return null
+  }
+}
 
 async function loadProfile(userId: string, email: string | null): Promise<AuthProfile | null> {
   if (!supabase) return null
@@ -56,28 +87,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>(isSupabaseConfigured ? 'loading' : 'anonymous')
   const [profile, setProfile] = useState<AuthProfile | null>(null)
 
-  const applySession = useCallback(async (userId: string | null, email: string | null, token: string | null) => {
-    setAccessToken(token)
-    if (!userId || !token) {
-      setProfile(null)
-      setStatus('anonymous')
-      return
-    }
-    const nextProfile = await loadProfile(userId, email)
-    if (!nextProfile) {
-      setProfile(null)
-      setAccessToken(null)
-      setStatus('anonymous')
-      if (supabase) await supabase.auth.signOut()
-      return
-    }
+  const restoreDevProfile = useCallback(() => {
+    const stored = readDevSession()
+    if (!stored) return false
+    const nextProfile = profileFromDev(stored)
+    if (!nextProfile) return false
+    setAccessToken(stored.access_token)
     setProfile(nextProfile)
     setStatus('authenticated')
+    return true
   }, [])
+
+  const applySession = useCallback(
+    async (userId: string | null, email: string | null, token: string | null) => {
+      if (!userId || !token) {
+        if (restoreDevProfile()) return
+        setAccessToken(null)
+        setProfile(null)
+        setStatus('anonymous')
+        return
+      }
+      setAccessToken(token)
+      const nextProfile = await loadProfile(userId, email)
+      if (!nextProfile) {
+        setAccessToken(null)
+        if (supabase) await supabase.auth.signOut()
+        if (restoreDevProfile()) return
+        setProfile(null)
+        setStatus('anonymous')
+        return
+      }
+      sessionStorage.removeItem(DEV_SESSION_KEY)
+      setProfile(nextProfile)
+      setStatus('authenticated')
+    },
+    [restoreDevProfile],
+  )
 
   useEffect(() => {
     if (!supabase) {
-      setStatus('anonymous')
+      if (!restoreDevProfile()) setStatus('anonymous')
       return
     }
 
@@ -96,31 +145,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true
       data.subscription.unsubscribe()
     }
-  }, [applySession])
+  }, [applySession, restoreDevProfile])
 
   const signIn = useCallback(async (email: string, password: string) => {
-    if (!supabase) {
-      return 'Admin sign-in is not available right now.'
+    if (supabase) {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+      if (!error && data.user && data.session) {
+        const nextProfile = await loadProfile(data.user.id, data.user.email ?? null)
+        if (nextProfile) {
+          sessionStorage.removeItem(DEV_SESSION_KEY)
+          setAccessToken(data.session.access_token)
+          setProfile(nextProfile)
+          setStatus('authenticated')
+          return null
+        }
+        await supabase.auth.signOut()
+      }
     }
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error || !data.user || !data.session) {
+
+    try {
+      const session = await api.post<DevSessionPayload>('/dev/session', { email, password })
+      const nextProfile = profileFromDev(session)
+      if (!nextProfile) {
+        return 'You do not have access to the admin dashboard.'
+      }
+      sessionStorage.setItem(DEV_SESSION_KEY, JSON.stringify(session))
+      setAccessToken(session.access_token)
+      setProfile(nextProfile)
+      setStatus('authenticated')
+      return null
+    } catch {
       return 'Invalid email or password.'
     }
-    const nextProfile = await loadProfile(data.user.id, data.user.email ?? null)
-    if (!nextProfile) {
-      await supabase.auth.signOut()
-      setAccessToken(null)
-      setProfile(null)
-      setStatus('anonymous')
-      return 'You do not have access to the admin dashboard.'
-    }
-    setAccessToken(data.session.access_token)
-    setProfile(nextProfile)
-    setStatus('authenticated')
-    return null
   }, [])
 
   const signOut = useCallback(async () => {
+    sessionStorage.removeItem(DEV_SESSION_KEY)
     if (supabase) await supabase.auth.signOut()
     setAccessToken(null)
     setProfile(null)

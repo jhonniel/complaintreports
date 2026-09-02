@@ -1,6 +1,6 @@
 import { isAdminRole, type AdminRole } from '../../shared/auth.ts'
 import type { AdminNoteItem, AdminReportDetail, AdminStatusHistoryItem } from '../../shared/adminReport.ts'
-import { isGender, isReportPriority, isReportStatus, normalizePhilippineMobile, type ReportPriority, type ReportStatus } from '../../shared/report.ts'
+import { isGender, isReportPriority, isReportStatus, combinePersonName, normalizePhilippineMobile, type ReportPriority, type ReportStatus } from '../../shared/report.ts'
 import { normalizeAccessPage } from '../../shared/map.ts'
 import { buildAnalytics, reporterFingerprint } from '../lib/analytics.ts'
 import {
@@ -263,7 +263,7 @@ export function createSupabaseStore(): ReportStore | null {
       const location = input.location ?? null
       const insertPayload = {
         ticket_number: ticketNumber,
-        full_name: input.full_name.trim(),
+        full_name: combinePersonName(input.first_name, input.last_name),
         birth_date: input.birth_date,
         gender: input.gender,
         address: input.address.trim(),

@@ -21,7 +21,7 @@ export function FormStepper({ steps, current }: FormStepperProps) {
             <div className="flex min-w-0 items-center gap-2">
               <span
                 className={cn(
-                  'flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold',
+                  'flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition-colors duration-200',
                   done && 'bg-pine-700 text-white',
                   active && 'bg-pine-800 text-white',
                   !done && !active && 'bg-ink-100 text-ink-500',

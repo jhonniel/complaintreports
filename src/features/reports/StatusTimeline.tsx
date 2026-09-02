@@ -36,7 +36,7 @@ export function StatusTimeline({ status }: StatusTimelineProps) {
             <div className="flex flex-col items-center">
               <span
                 className={cn(
-                  'flex size-7 items-center justify-center rounded-full border text-xs font-semibold',
+                  'flex size-7 items-center justify-center rounded-full border text-xs font-semibold transition-colors duration-300',
                   state === 'complete' && 'border-pine-700 bg-pine-700 text-white',
                   state === 'current' && 'border-earth-500 bg-earth-50 text-earth-600',
                   state === 'upcoming' && 'border-ink-200 bg-white text-ink-400',

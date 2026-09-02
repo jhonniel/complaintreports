@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from 'express'
 import { isAdminRole, type AdminRole } from '../../shared/auth.ts'
 import { sendError } from '../lib/http.ts'
 import { logError } from '../lib/log.ts'
+import { verifyDevToken } from '../lib/devAuth.ts'
 import { getSupabaseAdminClient, getUserScopedClient } from '../lib/supabase.ts'
 
 export interface AdminActor {
@@ -44,6 +45,13 @@ async function authorize(req: Request, res: Response, next: NextFunction) {
   const token = readAccessToken(req)
   if (!token) {
     sendError(res, 401, 'Authentication is required.')
+    return
+  }
+
+  const devActor = verifyDevToken(token)
+  if (devActor) {
+    res.locals.admin = devActor
+    next()
     return
   }
 

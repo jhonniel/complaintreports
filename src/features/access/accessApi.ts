@@ -32,20 +32,3 @@ export function logAccessLocation(input: {
       sessionStorage.removeItem(LOGGED_KEY)
     })
 }
-
-export function logAccessFromBrowser(page: string) {
-  if (!('geolocation' in navigator)) return
-  if (sessionStorage.getItem(LOGGED_KEY) === '1') return
-  navigator.geolocation.getCurrentPosition(
-    (result) => {
-      void logAccessLocation({
-        latitude: result.coords.latitude,
-        longitude: result.coords.longitude,
-        accuracy: Number.isFinite(result.coords.accuracy) ? result.coords.accuracy : null,
-        page,
-      })
-    },
-    () => undefined,
-    { enableHighAccuracy: false, timeout: 8000, maximumAge: 120_000 },
-  )
-}

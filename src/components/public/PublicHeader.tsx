@@ -31,7 +31,7 @@ export function PublicHeader() {
               to={item.to}
               end={item.to === '/'}
               className={({ isActive }) =>
-                `rounded-md px-3 py-2 text-sm font-medium transition-colors ${
+                `rounded-md px-3 py-2 text-sm font-medium transition-colors duration-200 ${
                   isActive ? 'bg-pine-50 text-pine-900' : 'text-ink-600 hover:bg-ink-100 hover:text-ink-900'
                 }`
               }
@@ -63,7 +63,7 @@ export function PublicHeader() {
         </Button>
       </div>
       {open ? (
-        <div id="mobile-nav" className="border-t border-ink-100 bg-ink-50 md:hidden">
+        <div id="mobile-nav" className="animate-slide-down border-t border-ink-100 bg-ink-50 md:hidden">
           <nav className="container-page flex flex-col py-3" aria-label="Mobile">
             {PUBLIC_NAV.map((item) => (
               <NavLink

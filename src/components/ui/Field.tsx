@@ -10,9 +10,19 @@ interface FieldProps {
   error?: string
   children: ReactNode
   className?: string
+  optionalLabel?: string
 }
 
-export function Field({ id, label, required, hint, error, children, className }: FieldProps) {
+export function Field({
+  id,
+  label,
+  required,
+  hint,
+  error,
+  children,
+  className,
+  optionalLabel = '(optional)',
+}: FieldProps) {
   const hintId = hint ? `${id}-hint` : undefined
   const errorId = error ? `${id}-error` : undefined
   const describedBy = [error ? errorId : undefined, !error ? hintId : undefined]
@@ -37,7 +47,7 @@ export function Field({ id, label, required, hint, error, children, className }:
           </span>
         ) : null}
         {required === false ? (
-          <span className="ml-1 font-normal text-ink-400">(optional)</span>
+          <span className="ml-1 font-normal text-ink-400">{optionalLabel}</span>
         ) : null}
       </Label>
       {control}

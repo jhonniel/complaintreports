@@ -117,7 +117,7 @@ export function TrackReportPage() {
       ) : null}
 
       {result && !loading ? (
-        <Card className="mt-6">
+        <Card className="mt-6 animate-fade-up">
           <CardBody className="space-y-6 p-6" aria-live="polite" aria-busy={loading}>
             <div>
               <p className="text-xs font-semibold tracking-[0.16em] text-ink-500 uppercase">Ticket</p>

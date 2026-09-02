@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import { AdminSidebar } from '@/components/admin/AdminSidebar'
 import { AdminTopBar } from '@/components/admin/AdminTopBar'
+import { PageTransition } from '@/components/ui/PageTransition'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 
 export function AdminLayout() {
@@ -26,8 +27,10 @@ export function AdminLayout() {
             else setMobileOpen(true)
           }}
         />
-        <main id="main" className="animate-fade-up flex-1 p-4 md:p-6">
-          <Outlet />
+        <main id="main" className="flex-1 p-4 md:p-6">
+          <PageTransition>
+            <Outlet />
+          </PageTransition>
         </main>
       </div>
     </div>

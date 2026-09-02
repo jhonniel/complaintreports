@@ -63,6 +63,7 @@
 
   --shadow-card: 0 1px 2px rgb(18 17 14 / 0.05), 0 8px 24px rgb(18 17 14 / 0.06);
   --shadow-raised: 0 12px 40px rgb(20 58 41 / 0.12);
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @layer base {
@@ -121,7 +122,71 @@
 @keyframes fade-up {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(1.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-1.25rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-0.5rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem) scale(0.98);
   }
   to {
     opacity: 1;
@@ -130,7 +195,51 @@
 }
 
 @utility animate-fade-up {
-  animation: fade-up 0.45s ease-out both;
+  animation: fade-up 0.55s var(--ease-out-soft) both;
+}
+
+@utility animate-fade-in {
+  animation: fade-in 0.4s var(--ease-out-soft) both;
+}
+
+@utility animate-page-in {
+  animation: fade-up 0.55s var(--ease-out-soft) both;
+}
+
+@utility animate-scale-in {
+  animation: scale-in 0.4s var(--ease-out-soft) both;
+}
+
+@utility animate-slide-in-right {
+  animation: slide-in-right 0.4s var(--ease-out-soft) both;
+}
+
+@utility animate-slide-in-left {
+  animation: slide-in-left 0.4s var(--ease-out-soft) both;
+}
+
+@utility animate-slide-down {
+  animation: slide-down 0.35s var(--ease-out-soft) both;
+}
+
+@utility animate-toast-in {
+  animation: toast-in 0.4s var(--ease-out-soft) both;
+}
+
+@utility animate-delay-1 {
+  animation-delay: 70ms;
+}
+
+@utility animate-delay-2 {
+  animation-delay: 140ms;
+}
+
+@utility animate-delay-3 {
+  animation-delay: 210ms;
+}
+
+@utility animate-delay-4 {
+  animation-delay: 280ms;
 }
 
 @utility container-page {

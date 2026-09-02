@@ -1,4 +1,5 @@
 import { Outlet } from 'react-router-dom'
+import { PageTransition } from '@/components/ui/PageTransition'
 
 export function AuthLayout() {
   return (
@@ -8,7 +9,9 @@ export function AuthLayout() {
         <div className="absolute right-0 bottom-0 size-96 rounded-full bg-earth-500/20 blur-3xl" />
       </div>
       <main className="relative z-10 flex min-h-svh items-center justify-center p-4">
-        <Outlet />
+        <PageTransition className="w-full max-w-md">
+          <Outlet />
+        </PageTransition>
       </main>
     </div>
   )

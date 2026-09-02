@@ -144,12 +144,21 @@ export const locationSchema = z
   .nullable()
   .optional()
 
+export function combinePersonName(firstName: string, lastName: string) {
+  return `${firstName.trim()} ${lastName.trim()}`.replace(/\s+/g, ' ').trim()
+}
+
 export const personalFieldsSchema = z.object({
-  full_name: z
+  first_name: z
     .string()
     .trim()
-    .min(2, 'Enter your full name')
-    .max(120, 'Name is too long'),
+    .min(2, 'Enter your first name')
+    .max(80, 'First name is too long'),
+  last_name: z
+    .string()
+    .trim()
+    .min(2, 'Enter your last name')
+    .max(80, 'Last name is too long'),
   birth_date: z
     .string()
     .trim()

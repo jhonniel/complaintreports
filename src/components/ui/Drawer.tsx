@@ -31,7 +31,7 @@ export function Drawer({ open, title, onClose, children, side = 'right' }: Drawe
     <div className="fixed inset-0 z-50">
       <button
         type="button"
-        className="absolute inset-0 bg-ink-950/40"
+        className="absolute inset-0 animate-fade-in bg-ink-950/40"
         aria-label="Close panel"
         onClick={onClose}
       />
@@ -41,7 +41,7 @@ export function Drawer({ open, title, onClose, children, side = 'right' }: Drawe
         aria-labelledby="drawer-title"
         className={cn(
           'absolute top-0 flex h-full w-[min(100%,24rem)] flex-col bg-white shadow-raised',
-          side === 'right' ? 'right-0' : 'left-0',
+          side === 'right' ? 'right-0 animate-slide-in-right' : 'left-0 animate-slide-in-left',
         )}
       >
         <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">

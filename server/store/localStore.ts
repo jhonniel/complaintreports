@@ -18,6 +18,7 @@ import {
   isGender,
   isReportPriority,
   isReportStatus,
+  combinePersonName,
   normalizePhilippineMobile,
   type ReportPriority,
   type ReportStatus,
@@ -709,7 +710,7 @@ export const localStore: ReportStore = {
       const report: LocalReport = {
         id,
         ticket_number: ticketNumber,
-        full_name: input.full_name.trim(),
+        full_name: combinePersonName(input.first_name, input.last_name),
         birth_date: input.birth_date,
         gender: input.gender,
         address: input.address.trim(),

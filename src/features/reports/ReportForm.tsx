@@ -17,11 +17,7 @@ import { FormStepper } from '@/components/ui/FormStepper'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Textarea } from '@/components/ui/Textarea'
-import { LocationPrompt } from '@/features/reports/LocationPrompt'
 import { fetchCategories, submitReport } from '@/features/reports/reportApi'
-import { logAccessFromBrowser } from '@/features/access/accessApi'
-import { useGeolocationPermission } from '@/hooks/useGeolocationPermission'
-import { useToast } from '@/components/ui/Toast'
 import { LAST_TICKET_KEY } from '@/lib/constants'
 import { ApiError } from '@/services/api'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -29,7 +25,8 @@ import { Skeleton } from '@/components/ui/Skeleton'
 const STEPS = ['Your details', 'Your report', 'Review']
 
 interface FormValues {
-  full_name: string
+  first_name: string
+  last_name: string
   birth_date: string
   gender: string
   address: string
@@ -42,7 +39,8 @@ interface FormValues {
 }
 
 const emptyValues: FormValues = {
-  full_name: '',
+  first_name: '',
+  last_name: '',
   birth_date: '',
   gender: '',
   address: '',
@@ -56,8 +54,6 @@ const emptyValues: FormValues = {
 
 export function ReportForm() {
   const navigate = useNavigate()
-  const { toast } = useToast()
-  const geo = useGeolocationPermission()
   const [step, setStep] = useState(1)
   const [values, setValues] = useState<FormValues>(emptyValues)
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -117,27 +113,13 @@ export function ReportForm() {
     return true
   }
 
-  async function handleAllowLocation() {
-    const result = await geo.requestPosition()
-    if (result === 'granted') {
-      logAccessFromBrowser(window.location.pathname)
-    }
-    if (result === 'denied') {
-      toast({
-        variant: 'info',
-        title: 'Location permission was denied',
-        description: 'You can still submit your report.',
-      })
-    }
-  }
-
   async function handleSubmit() {
     setFormError(null)
     const payload = {
       ...values,
       gender: values.gender as Gender,
       email: values.email.trim() ? values.email.trim() : undefined,
-      location: geo.decision === 'granted' && geo.position ? geo.position : null,
+      location: null,
     }
     const parsed = createReportSchema.safeParse(payload)
     if (!parsed.success) {
@@ -174,23 +156,9 @@ export function ReportForm() {
   }
 
   return (
-    <>
-      <LocationPrompt
-        open={geo.needsPrompt}
-        busy={geo.busy}
-        onAllow={() => void handleAllowLocation()}
-        onSkip={geo.dismiss}
-      />
-
-      <Card>
-        <CardBody className="space-y-6 overflow-hidden p-5 md:p-8">
+    <Card>
+      <CardBody className="space-y-6 overflow-hidden p-5 md:p-8">
           <FormStepper steps={STEPS} current={step} />
-
-          <LocationStatus
-            decision={geo.decision}
-            busy={geo.busy}
-            onShare={() => void handleAllowLocation()}
-          />
 
           {formError ? (
             <p className="rounded-md border border-danger-500/30 bg-danger-50 px-3 py-2 text-sm text-danger-700" role="alert">
@@ -222,19 +190,25 @@ export function ReportForm() {
               />
             </div>
 
+            <div key={step} className="animate-fade-up">
             {step === 1 ? (
               <div className="grid gap-4">
-                <p className="text-sm text-ink-600">
-                  Personal details are visible only to authorized city staff. They are never shown on
-                  public tracking pages.
-                </p>
-                <Field id="full_name" label="Full name" required error={errors.full_name}>
-                  <Input
-                    autoComplete="name"
-                    value={values.full_name}
-                    onChange={(event) => update('full_name', event.target.value)}
-                  />
-                </Field>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field id="first_name" label="First name" required error={errors.first_name}>
+                    <Input
+                      autoComplete="given-name"
+                      value={values.first_name}
+                      onChange={(event) => update('first_name', event.target.value)}
+                    />
+                  </Field>
+                  <Field id="last_name" label="Last name" required error={errors.last_name}>
+                    <Input
+                      autoComplete="family-name"
+                      value={values.last_name}
+                      onChange={(event) => update('last_name', event.target.value)}
+                    />
+                  </Field>
+                </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field id="birth_date" label="Birth date" required error={errors.birth_date}>
                     <Input
@@ -339,7 +313,8 @@ export function ReportForm() {
             {step === 3 ? (
               <div className="space-y-4">
                 <ReviewGroup title="Personal information">
-                  <ReviewItem label="Full name" value={values.full_name} />
+                  <ReviewItem label="First name" value={values.first_name} />
+                  <ReviewItem label="Last name" value={values.last_name} />
                   <ReviewItem label="Birth date" value={values.birth_date} />
                   <ReviewItem
                     label="Gender"
@@ -353,17 +328,10 @@ export function ReportForm() {
                   <ReviewItem label="Category" value={categoryName} />
                   <ReviewItem label="Report / complaint" value={values.title} />
                   <ReviewItem label="Description" value={values.description} />
-                  <ReviewItem
-                    label="Location"
-                    value={
-                      geo.decision === 'granted' && geo.position
-                        ? 'Shared with this report'
-                        : 'Not shared'
-                    }
-                  />
                 </ReviewGroup>
               </div>
             ) : null}
+            </div>
 
             <div className="sticky bottom-0 z-10 -mx-5 mt-2 flex flex-col-reverse gap-3 border-t border-ink-100 bg-white px-5 py-3 sm:flex-row sm:justify-between md:-mx-8 md:px-8">
               {step > 1 ? (
@@ -386,48 +354,6 @@ export function ReportForm() {
           </form>
         </CardBody>
       </Card>
-    </>
-  )
-}
-
-function LocationStatus({
-  decision,
-  busy,
-  onShare,
-}: {
-  decision: ReturnType<typeof useGeolocationPermission>['decision']
-  busy: boolean
-  onShare: () => void
-}) {
-  if (decision === null) return null
-
-  if (decision === 'granted') {
-    return <p className="text-sm text-pine-800">Location will be attached to this report.</p>
-  }
-
-  if (decision === 'denied') {
-    return (
-      <p className="text-sm text-ink-600">
-        Location permission was denied. You can still submit your report.
-      </p>
-    )
-  }
-
-  if (decision === 'unsupported') {
-    return (
-      <p className="text-sm text-ink-600">
-        This device cannot share location. You can still submit your report.
-      </p>
-    )
-  }
-
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md bg-ink-100 px-3 py-2 text-sm text-ink-700">
-      <span>Location was not shared. You can still submit your report.</span>
-      <Button variant="ghost" size="sm" loading={busy} onClick={onShare}>
-        Share location
-      </Button>
-    </div>
   )
 }
 

@@ -39,14 +39,14 @@ export function AdminSidebar({ collapsed, mobileOpen, onCloseMobile }: AdminSide
       {mobileOpen ? (
         <button
           type="button"
-          className="fixed inset-0 z-30 bg-ink-950/40 lg:hidden"
+          className="fixed inset-0 z-30 animate-fade-in bg-ink-950/40 lg:hidden"
           aria-label="Close navigation"
           onClick={onCloseMobile}
         />
       ) : null}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex flex-col bg-pine-950 text-pine-50 transition-transform lg:static lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-40 flex flex-col bg-pine-950 text-pine-50 transition-all duration-300 ease-out lg:static lg:translate-x-0',
           collapsed ? 'lg:w-[4.5rem]' : 'lg:w-64',
           'w-64',
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
@@ -78,7 +78,7 @@ export function AdminSidebar({ collapsed, mobileOpen, onCloseMobile }: AdminSide
                 onClick={onCloseMobile}
                 className={({ isActive }) =>
                   cn(
-                    'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium',
+                    'flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors duration-200',
                     isActive ? 'bg-white/10 text-white' : 'text-pine-100/80 hover:bg-white/5 hover:text-white',
                     collapsed && 'lg:justify-center lg:px-2',
                   )

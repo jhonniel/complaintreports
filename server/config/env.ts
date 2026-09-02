@@ -32,16 +32,36 @@ export const env = {
   supabaseUrl: required('SUPABASE_URL') ?? required('VITE_SUPABASE_URL'),
   supabaseAnonKey: required('SUPABASE_ANON_KEY') ?? required('VITE_SUPABASE_ANON_KEY'),
   supabaseServiceRoleKey: required('SUPABASE_SERVICE_ROLE_KEY'),
+  devAdminEmail: required('DEV_ADMIN_EMAIL'),
+  devAdminPassword: required('DEV_ADMIN_PASSWORD'),
   isVercel: process.env.VERCEL === '1',
 }
 
 export const isProduction = env.nodeEnv === 'production'
 export const isSupabaseConfigured = Boolean(env.supabaseUrl && env.supabaseAnonKey)
 export const hasServiceRole = Boolean(env.supabaseServiceRoleKey)
+export const isDevAdminEnabled = Boolean(
+  !isProduction && !env.isVercel && env.devAdminEmail && env.devAdminPassword,
+)
 
 export function isAllowedOrigin(origin: string | undefined) {
   if (!origin) return true
   if (env.clientOrigins.includes(origin)) return true
-  if (!isProduction && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin)) return true
+  if (!isProduction && isLocalDevOrigin(origin)) return true
   return false
+}
+
+function isLocalDevOrigin(origin: string) {
+  try {
+    const url = new URL(origin)
+    if (url.protocol !== 'http:') return false
+    const host = url.hostname
+    if (host === 'localhost' || host === '127.0.0.1') return true
+    const parts = host.split('.').map(Number)
+    if (parts.length !== 4 || parts.some((part) => Number.isNaN(part) || part < 0 || part > 255)) return false
+    const [first, second] = parts
+    return first === 10 || (first === 192 && second === 168) || (first === 172 && second >= 16 && second <= 31)
+  } catch {
+    return false
+  }
 }

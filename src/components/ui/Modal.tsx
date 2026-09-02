@@ -43,7 +43,7 @@ export function Modal({
     <div className="fixed inset-0 z-50 flex items-end justify-center p-4 sm:items-center">
       <button
         type="button"
-        className="absolute inset-0 bg-ink-950/50"
+        className="absolute inset-0 animate-fade-in bg-ink-950/50"
         aria-label="Close dialog"
         onClick={dismissible ? onClose : undefined}
         disabled={!dismissible}
@@ -53,7 +53,7 @@ export function Modal({
         aria-modal="true"
         aria-labelledby="modal-title"
         className={cn(
-          'relative z-10 w-full max-w-lg rounded-xl bg-white shadow-raised',
+          'relative z-10 w-full max-w-lg animate-scale-in rounded-xl bg-white shadow-raised',
           className,
         )}
       >
