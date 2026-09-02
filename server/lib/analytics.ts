@@ -9,9 +9,11 @@ import {
 } from '../../shared/analytics.ts'
 import { roundAccessCell } from '../../shared/map.ts'
 import {
+  GENDER_LABELS,
   MANILA_TIME_ZONE,
   REPORT_STATUSES,
   STATUS_LABELS,
+  isGender,
   normalizePhilippineMobile,
   type ReportStatus,
 } from '../../shared/report.ts'
@@ -24,9 +26,47 @@ export interface AnalyticsSourceRow {
   createdAt: string
   latitude: number | null
   longitude: number | null
+  gender: string | null
+  birthDate: string | null
 }
 
 const PENDING: ReportStatus[] = ['submitted', 'received', 'under_review']
+
+const AGE_GROUPS = [
+  { key: 'under_18', label: 'Under 18', min: 0, max: 17 },
+  { key: '18_24', label: '18–24', min: 18, max: 24 },
+  { key: '25_34', label: '25–34', min: 25, max: 34 },
+  { key: '35_44', label: '35–44', min: 35, max: 44 },
+  { key: '45_54', label: '45–54', min: 45, max: 54 },
+  { key: '55_64', label: '55–64', min: 55, max: 64 },
+  { key: '65_plus', label: '65 and over', min: 65, max: 120 },
+] as const
+
+function ageAt(birthDate: string, at: Date): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(birthDate.trim())
+  if (!match) return null
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const birth = new Date(Date.UTC(year, month - 1, day))
+  if (Number.isNaN(birth.getTime())) return null
+  const { year: atYear, month: atMonth, day: atDay } = manilaParts(at)
+  let age = atYear - year
+  if (atMonth < month || (atMonth === month && atDay < day)) age -= 1
+  if (age < 0 || age > 120) return null
+  return age
+}
+
+function ageGroupLabel(age: number | null): string {
+  if (age == null) return 'Unknown'
+  const group = AGE_GROUPS.find((entry) => age >= entry.min && age <= entry.max)
+  return group?.label ?? 'Unknown'
+}
+
+function genderLabel(value: string | null): string {
+  if (value && isGender(value)) return GENDER_LABELS[value]
+  return 'Unknown'
+}
 
 export function reporterFingerprint(phone: string) {
   return createHash('sha256').update(normalizePhilippineMobile(phone)).digest('hex')
@@ -269,6 +309,27 @@ export function buildAnalytics(rows: AnalyticsSourceRow[], query: AnalyticsQuery
       label: formatAreaLabel(area.latitude, area.longitude),
     }))
 
+  const genderMap = new Map<string, number>()
+  for (const gender of Object.values(GENDER_LABELS) as string[]) genderMap.set(gender, 0)
+  for (const row of filtered) {
+    const name = genderLabel(row.gender)
+    genderMap.set(name, (genderMap.get(name) ?? 0) + 1)
+  }
+  const genders = [...genderMap.entries()]
+    .filter(([name, count]) => name !== 'Unknown' || count > 0)
+    .map(([name, count]) => ({ name, count }))
+
+  const ageMap = new Map<string, number>()
+  for (const group of AGE_GROUPS) ageMap.set(group.label, 0)
+  ageMap.set('Unknown', 0)
+  for (const row of filtered) {
+    const label = ageGroupLabel(ageAt(row.birthDate ?? '', new Date(row.createdAt)))
+    ageMap.set(label, (ageMap.get(label) ?? 0) + 1)
+  }
+  const ages = [...ageMap.entries()]
+    .filter(([name, count]) => name !== 'Unknown' || count > 0)
+    .map(([name, count]) => ({ name, count }))
+
   return {
     query,
     totals,
@@ -286,6 +347,7 @@ export function buildAnalytics(rows: AnalyticsSourceRow[], query: AnalyticsQuery
       without_location: filtered.length - withLocation,
       areas,
     },
+    demographics: { genders, ages },
   }
 }
 

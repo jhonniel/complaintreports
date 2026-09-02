@@ -341,7 +341,7 @@ export function createSupabaseStore(): ReportStore | null {
     async getAnalytics(query) {
       const { data, error } = await db
         .from('reports')
-        .select('status, phone, created_at, latitude, longitude, assigned_department_id, report_categories ( name ), departments ( name )')
+        .select('status, phone, created_at, latitude, longitude, gender, birth_date, assigned_department_id, report_categories ( name ), departments ( name )')
 
       if (error) {
         logError('store', error)
@@ -358,6 +358,8 @@ export function createSupabaseStore(): ReportStore | null {
           createdAt: row.created_at as string,
           latitude: typeof row.latitude === 'number' ? row.latitude : null,
           longitude: typeof row.longitude === 'number' ? row.longitude : null,
+          gender: typeof row.gender === 'string' ? row.gender : null,
+          birthDate: typeof row.birth_date === 'string' ? row.birth_date : null,
         }
       })
       return buildAnalytics(rows, query)

@@ -24,7 +24,4 @@ create policy "Admins can read own profile"
   using (auth.uid() = user_id);
 
 -- Authenticated users cannot insert or change roles from the client.
--- Create the first administrator after adding a user in Authentication > Users:
---
--- insert into public.profiles (user_id, full_name, role)
--- values ('00000000-0000-0000-0000-000000000000', 'City Administrator', 'super_admin');
+-- To create the first administrator, run supabase/seed_admin.sql in the SQL editor.

@@ -79,10 +79,13 @@
     background: var(--color-ink-50);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+    overflow-wrap: break-word;
   }
 
   #root {
     min-height: 100svh;
+    min-width: 0;
+    max-width: 100%;
   }
 
   h1,
@@ -246,10 +249,13 @@
   margin-inline: auto;
   width: 100%;
   max-width: 72rem;
-  padding-inline: 1.25rem;
+  min-width: 0;
+  padding-left: max(1.5rem, env(safe-area-inset-left, 0px));
+  padding-right: max(1.5rem, env(safe-area-inset-right, 0px));
 
   @media (min-width: 768px) {
-    padding-inline: 1.75rem;
+    padding-left: max(1.75rem, env(safe-area-inset-left, 0px));
+    padding-right: max(1.75rem, env(safe-area-inset-right, 0px));
   }
 }
 

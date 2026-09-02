@@ -36,11 +36,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const errorBody = body as ApiErrorBody | null
-    throw new ApiError(
-      errorBody?.error ?? 'Something went wrong. Please try again.',
-      response.status,
-      errorBody?.details,
-    )
+    const message =
+      errorBody?.error ??
+      (response.status === 503
+        ? 'The service is temporarily unavailable.'
+        : 'Something went wrong. Please try again.')
+    throw new ApiError(message, response.status, errorBody?.details)
   }
 
   return body as T

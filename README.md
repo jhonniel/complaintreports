@@ -14,8 +14,7 @@ The app is ready to deploy on Vercel with hosted Supabase and TomTom. Public sub
 
 1. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in `.env`. Use the same URL and anon key on the server (`SUPABASE_URL`, `SUPABASE_ANON_KEY`). Keep `SUPABASE_SERVICE_ROLE_KEY` server-only.
 2. Run the SQL in `supabase/migrations/` in order (reports, profiles, notes, access logs, then security grants).
-3. Create a user in Supabase Authentication.
-4. Insert a profile row with `role` of `super_admin`, `admin`, or `staff`.
+3. Run `supabase/seed_admin.sql` in the SQL editor. Set `admin_email` and `admin_password` first.
 
 ## Requirements
 

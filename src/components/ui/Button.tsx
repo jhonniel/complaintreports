@@ -41,7 +41,7 @@ export function Button({
     <button
       type={type}
       className={cn(
-        'inline-flex items-center justify-center gap-2 rounded-md font-semibold tracking-tight',
+        'inline-flex items-center justify-center gap-2 rounded-md font-semibold tracking-normal',
         'transition-[color,background-color,box-shadow,transform,opacity] duration-200 ease-out',
         'hover:-translate-y-px active:translate-y-0 active:scale-[0.98]',
         'disabled:cursor-not-allowed disabled:opacity-70',

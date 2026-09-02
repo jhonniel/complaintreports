@@ -485,6 +485,8 @@ export const localStore: ReportStore = {
         createdAt: report.created_at,
         latitude: report.latitude,
         longitude: report.longitude,
+        gender: report.gender,
+        birthDate: report.birth_date,
       }
     })
     return buildAnalytics(rows, query)

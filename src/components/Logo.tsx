@@ -20,7 +20,7 @@ export function Logo({ variant = 'full', className, to = '/' }: LogoProps) {
         alt=""
         className={cn(
           'shrink-0 object-contain',
-          variant === 'mark' ? 'size-10' : 'h-12 w-auto sm:h-14',
+          variant === 'mark' ? 'size-10' : 'size-10 md:h-12 md:w-12 lg:h-14 lg:w-14',
         )}
       />
     </Link>

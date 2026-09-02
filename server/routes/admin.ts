@@ -81,6 +81,14 @@ function sendStoreError(res: Parameters<typeof sendError>[0], error: unknown) {
     sendError(res, 400, error.message)
     return true
   }
+  if (error instanceof Error && error.message === 'STORAGE_UNAVAILABLE') {
+    sendError(
+      res,
+      503,
+      'The database is not ready. Confirm the Supabase tables and SUPABASE_SERVICE_ROLE_KEY.',
+    )
+    return true
+  }
   return false
 }
 
@@ -112,6 +120,7 @@ adminRouter.get(
       const result = await getReportStore().listAdminReports(query)
       res.json(result)
     } catch (error) {
+      if (sendStoreError(res, error)) return
       logError('admin', error)
       sendError(res, 500, 'Something went wrong. Please try again.')
     }
@@ -134,6 +143,7 @@ adminRouter.get(
       }
       res.json(report)
     } catch (error) {
+      if (sendStoreError(res, error)) return
       logError('admin', error)
       sendError(res, 500, 'Something went wrong. Please try again.')
     }
@@ -251,6 +261,7 @@ adminRouter.get(
       const analytics = await getReportStore().getAnalytics(query)
       res.json(analytics)
     } catch (error) {
+      if (sendStoreError(res, error)) return
       logError('admin', error)
       sendError(res, 500, 'Something went wrong. Please try again.')
     }
@@ -264,6 +275,7 @@ adminRouter.get(
       const categories = await getReportStore().listAdminCategories()
       res.json({ categories })
     } catch (error) {
+      if (sendStoreError(res, error)) return
       logError('admin', error)
       sendError(res, 500, 'Something went wrong. Please try again.')
     }
@@ -314,6 +326,7 @@ adminRouter.get(
       const departments = await getReportStore().listDepartments()
       res.json({ departments })
     } catch (error) {
+      if (sendStoreError(res, error)) return
       logError('admin', error)
       sendError(res, 500, 'Something went wrong. Please try again.')
     }
@@ -376,6 +389,7 @@ adminRouter.get(
       }
       res.json({ staff })
     } catch (error) {
+      if (sendStoreError(res, error)) return
       logError('admin', error)
       sendError(res, 500, 'Something went wrong. Please try again.')
     }
@@ -390,6 +404,7 @@ adminRouter.get(
       const reports = await getReportStore().listMapReports(query)
       res.json({ reports: reports.map(toMapReportPoint) })
     } catch (error) {
+      if (sendStoreError(res, error)) return
       logError('admin', error)
       sendError(res, 500, 'Something went wrong. Please try again.')
     }
@@ -404,6 +419,7 @@ adminRouter.get(
       const clusters = await getReportStore().listMapAccess(query)
       res.json({ clusters: clusters.map(toMapAccessCluster) })
     } catch (error) {
+      if (sendStoreError(res, error)) return
       logError('admin', error)
       sendError(res, 500, 'Something went wrong. Please try again.')
     }

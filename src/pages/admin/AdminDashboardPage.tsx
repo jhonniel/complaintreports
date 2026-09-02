@@ -33,8 +33,8 @@ export function AdminDashboardPage() {
       })
       .catch((err) => {
         if (cancelled) return
-        if (err instanceof ApiError && err.status === 401) {
-          setError('Sign in to view the dashboard.')
+        if (err instanceof ApiError) {
+          setError(err.status === 401 ? 'Sign in to view the dashboard.' : err.message)
         } else {
           setError('Something went wrong. Please try again.')
         }
@@ -56,7 +56,8 @@ export function AdminDashboardPage() {
         <div>
           <h1 className="font-display text-3xl font-semibold">Dashboard</h1>
           <p className="mt-1 text-sm text-ink-500">
-            Overview of civic reports for Kidapawan City. Personal information is never shown in these charts.{' '}
+            Overview of civic reports for Kidapawan City, including gender, age groups, and rounded
+          locations. Personal information is never shown in these charts.{' '}
             <Link className="font-semibold text-pine-800 hover:underline" to="/admin/analytics">
               Open full analytics
             </Link>

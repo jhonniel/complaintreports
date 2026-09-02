@@ -59,6 +59,24 @@ export interface StatusCount {
   count: number
 }
 
+export interface AnalyticsGeography {
+  with_location: number
+  without_location: number
+  areas: GeoAreaCount[]
+}
+
+export interface GeoAreaCount {
+  latitude: number
+  longitude: number
+  count: number
+  label: string
+}
+
+export interface AnalyticsDemographics {
+  genders: NamedCount[]
+  ages: NamedCount[]
+}
+
 export interface AnalyticsResponse {
   query: AnalyticsQuery
   totals: AnalyticsTotals
@@ -68,6 +86,7 @@ export interface AnalyticsResponse {
   statuses: StatusCount[]
   departments: NamedCount[]
   geography: AnalyticsGeography
+  demographics: AnalyticsDemographics
 }
 
 export interface AnalyticsGeography {

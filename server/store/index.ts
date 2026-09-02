@@ -3,6 +3,7 @@ import { ProductionStorageError } from '../lib/errors.ts'
 import { localStore } from './localStore.ts'
 import { createSupabaseStore } from './supabaseStore.ts'
 import type { ReportStore } from './types.ts'
+import { ensureSupabaseSeed } from '../lib/seedSupabase.ts'
 
 let cached: ReportStore | null = null
 
@@ -12,6 +13,7 @@ export function getReportStore(): ReportStore {
     const supabaseStore = createSupabaseStore()
     if (supabaseStore) {
       cached = supabaseStore
+      void ensureSupabaseSeed()
       return cached
     }
   }

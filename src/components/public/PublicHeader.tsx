@@ -24,9 +24,9 @@ export function PublicHeader() {
   }, [open])
 
   return (
-    <header className="sticky top-0 z-40 border-b border-pine-900/10 bg-ink-50/90 backdrop-blur-md">
-      <div className="container-page flex h-16 items-center justify-between gap-4">
-        <Logo />
+    <header className="sticky top-0 z-40 w-full min-w-0 border-b border-pine-900/10 bg-ink-50/95 pt-[env(safe-area-inset-top)] shadow-[0_1px_0_rgb(20_58_41/0.04)] backdrop-blur-md">
+      <div className="container-page flex h-14 min-w-0 items-center justify-between gap-3 md:h-16 md:gap-4">
+        <Logo className="min-w-0 shrink" />
         <nav className="hidden items-center gap-1 md:flex" aria-label="Primary">
           {PUBLIC_NAV.map((item) => (
             <NavLink
@@ -61,9 +61,9 @@ export function PublicHeader() {
           </Link>
         </div>
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
-          className="px-2 md:hidden"
+          className="size-11 shrink-0 bg-white px-0 md:hidden"
           aria-expanded={open}
           aria-controls="mobile-nav"
           aria-label={open ? 'Close menu' : 'Open menu'}
@@ -73,15 +73,21 @@ export function PublicHeader() {
         </Button>
       </div>
       {open ? (
-        <div id="mobile-nav" className="animate-slide-down border-t border-ink-100 bg-ink-50 md:hidden">
-          <nav className="container-page flex flex-col py-3" aria-label="Mobile">
+        <div
+          id="mobile-nav"
+          className="animate-slide-down border-t border-ink-100 bg-ink-50 md:hidden"
+        >
+          <nav
+            className="container-page flex max-h-[min(100dvh-3.5rem,28rem)] flex-col overflow-y-auto py-3 pb-[max(1rem,env(safe-area-inset-bottom))]"
+            aria-label="Mobile"
+          >
             {PUBLIC_NAV.map((item) => (
               <NavLink
                 key={item.to}
                 to={item.to}
                 end={item.to === '/'}
                 className={({ isActive }) =>
-                  `rounded-md px-3 py-3 text-sm font-medium ${
+                  `rounded-lg px-3 py-3.5 text-base font-medium ${
                     isActive ? 'bg-pine-50 text-pine-900' : 'text-ink-700'
                   }`
                 }
@@ -89,21 +95,23 @@ export function PublicHeader() {
                 {item.label}
               </NavLink>
             ))}
-            {isAdmin ? (
-              <Link to="/admin/dashboard" className="mt-2">
+            <div className="grid gap-2 pt-4">
+              {isAdmin ? (
+                <Link to="/admin/dashboard" className="w-full">
+                  <Button variant="outline" className="w-full">
+                    Back to admin
+                  </Button>
+                </Link>
+              ) : null}
+              <Link to="/track" className="w-full">
                 <Button variant="outline" className="w-full">
-                  Back to admin
+                  Track a report
                 </Button>
               </Link>
-            ) : null}
-            <Link to="/track" className="mt-2">
-              <Button variant="outline" className="w-full">
-                Track a report
-              </Button>
-            </Link>
-            <Link to="/submit" className="mt-2">
-              <Button className="w-full">Submit a Report</Button>
-            </Link>
+              <Link to="/submit" className="w-full">
+                <Button className="w-full">Submit a Report</Button>
+              </Link>
+            </div>
           </nav>
         </div>
       ) : null}

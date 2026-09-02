@@ -55,8 +55,8 @@ export function AdminAnalyticsPage() {
         <div>
           <h1 className="font-display text-3xl font-semibold">Analytics</h1>
           <p className="mt-1 text-sm text-ink-500">
-            Charts never include names, contact details, or exact personal location. Geographic totals
-            use rounded areas only.
+            Charts never include names, contact details, exact birth dates, or exact personal
+            location. Age is grouped. Geographic totals use rounded areas only.
           </p>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
