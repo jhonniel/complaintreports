@@ -91,8 +91,8 @@ export function AdminMapPage() {
       <div>
         <h1 className="font-display text-3xl font-semibold">Map</h1>
         <p className="mt-1 text-sm text-ink-500">
-          Report markers never include names or contact details. Access locations are grouped so
-          individual visitors cannot be identified.
+          Report pins are placed from the address on the ticket. Names and contact details are never
+          shown. Access locations are grouped so individual visitors cannot be identified.
         </p>
       </div>
 
@@ -228,8 +228,12 @@ export function AdminMapPage() {
             </Suspense>
             <p className="px-4 py-3 text-xs text-ink-400">
               {layer === 'reports'
-                ? `${reports.length} report location${reports.length === 1 ? '' : 's'} in this filter.`
-                : `${clusters.length} approximate access area${clusters.length === 1 ? '' : 's'} in this range.`}
+                ? reports.length === 0
+                  ? 'No report pins in this filter. Tickets without a mappable Kidapawan address stay off the map.'
+                  : `${reports.length} report location${reports.length === 1 ? '' : 's'} in this filter.`
+                : clusters.length === 0
+                  ? 'No approximate access areas in this range.'
+                  : `${clusters.length} approximate access area${clusters.length === 1 ? '' : 's'} in this range.`}
             </p>
           </>
         )}

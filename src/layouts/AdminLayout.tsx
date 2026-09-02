@@ -1,14 +1,16 @@
 import { useState } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { AdminSidebar } from '@/components/admin/AdminSidebar'
 import { AdminTopBar } from '@/components/admin/AdminTopBar'
 import { PageTransition } from '@/components/ui/PageTransition'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 
 export function AdminLayout() {
+  const location = useLocation()
   const isDesktop = useMediaQuery('(min-width: 1024px)')
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
+  const isMapPage = location.pathname === '/admin/map'
 
   return (
     <div className="flex min-h-svh bg-ink-50">
@@ -28,9 +30,13 @@ export function AdminLayout() {
           }}
         />
         <main id="main" className="flex-1 p-4 md:p-6">
-          <PageTransition>
+          {isMapPage ? (
             <Outlet />
-          </PageTransition>
+          ) : (
+            <PageTransition motion="fade">
+              <Outlet />
+            </PageTransition>
+          )}
         </main>
       </div>
     </div>

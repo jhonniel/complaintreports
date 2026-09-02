@@ -3,11 +3,14 @@ import { NavLink, Link, useLocation } from 'react-router-dom'
 import { Menu, X } from 'lucide-react'
 import { Logo } from '@/components/Logo'
 import { Button } from '@/components/ui/Button'
+import { useAuth } from '@/features/auth/AuthProvider'
 import { APP_NAME, CITY_NAME, PUBLIC_NAV } from '@/lib/constants'
 
 export function PublicHeader() {
   const [open, setOpen] = useState(false)
   const location = useLocation()
+  const { status } = useAuth()
+  const isAdmin = status === 'authenticated'
 
   useEffect(() => {
     setOpen(false)
@@ -41,6 +44,13 @@ export function PublicHeader() {
           ))}
         </nav>
         <div className="hidden items-center gap-2 md:flex">
+          {isAdmin ? (
+            <Link to="/admin/dashboard">
+              <Button variant="outline" size="sm">
+                Back to admin
+              </Button>
+            </Link>
+          ) : null}
           <Link to="/track">
             <Button variant="ghost" size="sm">
               Track
@@ -79,6 +89,13 @@ export function PublicHeader() {
                 {item.label}
               </NavLink>
             ))}
+            {isAdmin ? (
+              <Link to="/admin/dashboard" className="mt-2">
+                <Button variant="outline" className="w-full">
+                  Back to admin
+                </Button>
+              </Link>
+            ) : null}
             <Link to="/track" className="mt-2">
               <Button variant="outline" className="w-full">
                 Track a report

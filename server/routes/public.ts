@@ -11,6 +11,7 @@ import {
 } from '../../shared/report.ts'
 import { sendError } from '../lib/http.ts'
 import { captchaAccepted } from '../lib/captcha.ts'
+import { geocodeKidapawanAddress } from '../lib/geocode.ts'
 import { logError } from '../lib/log.ts'
 import { asyncHandler } from '../middleware/asyncHandler.ts'
 import { publicReadLimiter, publicWriteLimiter } from '../middleware/rateLimit.ts'
@@ -46,10 +47,24 @@ publicRouter.post(
   },
   validateBody(createReportSchema),
   asyncHandler(async (req, res) => {
-    const payload = req.body as CreateReportInput
+    let payload = req.body as CreateReportInput
     if (!captchaAccepted(payload.captcha_token)) {
       sendError(res, 400, 'Unable to submit your report.')
       return
+    }
+    if (!payload.location) {
+      const geo = await geocodeKidapawanAddress(payload.address)
+      if (geo) {
+        payload = {
+          ...payload,
+          location: {
+            latitude: geo.latitude,
+            longitude: geo.longitude,
+            accuracy: null,
+            timestamp: new Date().toISOString(),
+          },
+        }
+      }
     }
     try {
       const created = await getReportStore().createReport(payload)

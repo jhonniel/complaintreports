@@ -39,7 +39,9 @@ export function AdminLoginPage() {
   return (
     <Card className="w-full max-w-md">
       <CardBody className="p-8">
-        <Logo />
+        <div className="flex justify-center">
+          <Logo />
+        </div>
         <h1 className="mt-6 font-display text-3xl font-semibold">Admin sign in</h1>
         <p className="mt-2 text-sm text-ink-500">Authorized personnel only. Public reports do not use this page.</p>
         {!isConfigured ? (
@@ -59,7 +61,6 @@ export function AdminLoginPage() {
             <Input
               type="email"
               autoComplete="username"
-              placeholder="admin@kidapawan.gov.ph"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
             />

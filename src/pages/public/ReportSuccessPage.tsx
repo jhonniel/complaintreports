@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Card, CardBody } from '@/components/ui/Card'
 import { useToast } from '@/components/ui/Toast'
 import { LAST_TICKET_KEY } from '@/lib/constants'
+import { useAuth } from '@/features/auth/AuthProvider'
 
 function readStoredTicket(): CreateReportResponse | null {
   const raw = sessionStorage.getItem(LAST_TICKET_KEY)
@@ -22,6 +23,8 @@ function readStoredTicket(): CreateReportResponse | null {
 export function ReportSuccessPage() {
   const location = useLocation()
   const { toast } = useToast()
+  const { status } = useAuth()
+  const isAdmin = status === 'authenticated'
   const [copied, setCopied] = useState(false)
   const result = useMemo(() => {
     const fromState = location.state as CreateReportResponse | null
@@ -79,9 +82,16 @@ export function ReportSuccessPage() {
         <Link to={`/track?ticket=${encodeURIComponent(result.ticket_number)}`}>
           <Button className="w-full sm:w-auto">Track this report</Button>
         </Link>
-        <Link to="/">
+        {isAdmin ? (
+          <Link to={`/admin/reports/${encodeURIComponent(result.ticket_number)}`}>
+            <Button variant="outline" className="w-full sm:w-auto">
+              View in admin
+            </Button>
+          </Link>
+        ) : null}
+        <Link to={isAdmin ? '/admin/dashboard' : '/'}>
           <Button variant="ghost" className="w-full sm:w-auto">
-            Return home
+            {isAdmin ? 'Back to admin' : 'Return home'}
           </Button>
         </Link>
       </div>

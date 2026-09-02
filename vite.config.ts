@@ -24,6 +24,9 @@ export default defineConfig({
       },
     },
   },
+  optimizeDeps: {
+    include: ['maplibre-gl', 'rbush'],
+  },
   build: {
     sourcemap: false,
     target: 'es2022',

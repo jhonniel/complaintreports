@@ -34,6 +34,7 @@ export const env = {
   supabaseServiceRoleKey: required('SUPABASE_SERVICE_ROLE_KEY'),
   devAdminEmail: required('DEV_ADMIN_EMAIL'),
   devAdminPassword: required('DEV_ADMIN_PASSWORD'),
+  tomtomApiKey: required('TOMTOM_API_KEY') ?? required('VITE_TOMTOM_API_KEY'),
   isVercel: process.env.VERCEL === '1',
 }
 

@@ -24,6 +24,7 @@ import {
   type ReportStatus,
 } from '../../shared/report.ts'
 import { buildAnalytics, reporterFingerprint } from '../lib/analytics.ts'
+import { geocodeKidapawanAddress } from '../lib/geocode.ts'
 import {
   DepartmentNotFoundError,
   filterAdminReports,
@@ -255,6 +256,44 @@ async function readDatabase(): Promise<LocalDatabase> {
 async function writeDatabase(database: LocalDatabase) {
   await mkdir(dataDir, { recursive: true })
   await writeFile(dataFile, JSON.stringify(database, null, 2), 'utf8')
+}
+
+const geocodeSkipIds = new Set<string>()
+
+async function hydrateMissingMapLocations() {
+  return withLock(async () => {
+    const database = await readDatabase()
+    const missing = database.reports.filter(
+      (report) =>
+        (report.latitude == null || report.longitude == null) &&
+        report.address.trim().length > 3 &&
+        !geocodeSkipIds.has(report.id),
+    )
+    if (missing.length === 0) return
+
+    const results = await Promise.all(
+      missing.slice(0, 8).map(async (report) => ({
+        id: report.id,
+        geo: await geocodeKidapawanAddress(report.address),
+      })),
+    )
+
+    let changed = false
+    const now = new Date().toISOString()
+    for (const { id, geo } of results) {
+      const report = database.reports.find((entry) => entry.id === id)
+      if (!report) continue
+      if (!geo) {
+        geocodeSkipIds.add(id)
+        continue
+      }
+      report.latitude = geo.latitude
+      report.longitude = geo.longitude
+      report.location_captured_at = now
+      changed = true
+    }
+    if (changed) await writeDatabase(database)
+  })
 }
 
 function reportStatus(value: string): ReportStatus {
@@ -658,6 +697,7 @@ export const localStore: ReportStore = {
   },
 
   async listMapReports(query) {
+    await hydrateMissingMapLocations()
     const database = await readDatabase()
     return filterAdminReports(
       database.reports.map((report) => toRecord(database, report)),

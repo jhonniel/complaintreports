@@ -1,5 +1,6 @@
+import '@/lib/maplibreWorker'
 import { useEffect, useRef } from 'react'
-import { Popup } from 'maplibre-gl'
+import { NavigationControl, Popup } from 'maplibre-gl'
 import { TomTomConfig } from '@tomtom-org/maps-sdk/core'
 import { CustomGeoJSONModule, TomTomMap } from '@tomtom-org/maps-sdk/map'
 import type { MapAccessCluster, MapReportPoint } from '@shared/map'
@@ -37,6 +38,24 @@ function reportPopup(point: MapReportPoint) {
   `
 }
 
+function waitForSize(node: HTMLElement, isCancelled: () => boolean) {
+  if (node.clientWidth > 0 && node.clientHeight > 0) return Promise.resolve(true)
+  return new Promise<boolean>((resolve) => {
+    const observer = new ResizeObserver(() => {
+      if (node.clientWidth > 0 && node.clientHeight > 0) {
+        observer.disconnect()
+        window.clearTimeout(timer)
+        resolve(!isCancelled())
+      }
+    })
+    observer.observe(node)
+    const timer = window.setTimeout(() => {
+      observer.disconnect()
+      resolve(!isCancelled() && node.clientWidth > 0 && node.clientHeight > 0)
+    }, 2000)
+  })
+}
+
 export function AdminMapCanvas({ layer, reports, clusters, focusTicket }: AdminMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<TomTomMap | null>(null)
@@ -49,24 +68,48 @@ export function AdminMapCanvas({ layer, reports, clusters, focusTicket }: AdminM
   useEffect(() => {
     const node = containerRef.current
     if (!node) return
+
     let cancelled = false
+    let map: TomTomMap | null = null
+    let popup: Popup | null = null
+    let resizeObserver: ResizeObserver | undefined
 
-    TomTomConfig.instance.put({ apiKey: TOMTOM_API_KEY, language: 'en-GB' })
-    const map = new TomTomMap({
-      apiKey: TOMTOM_API_KEY,
-      style: 'standardLight',
-      mapLibre: {
-        container: node,
-        center: KIDAPAWAN_CENTER,
-        zoom: 13,
-      },
+    const frame = window.requestAnimationFrame(() => {
+      void start()
     })
-    mapRef.current = map
 
-    const popup = new Popup({ closeButton: true, maxWidth: '240px' })
-    popupRef.current = popup
+    async function start() {
+      if (cancelled || !node) return
+      const sized = await waitForSize(node, () => cancelled)
+      if (!sized || cancelled) return
 
-    void (async () => {
+      TomTomConfig.instance.put({ apiKey: TOMTOM_API_KEY, language: 'en-GB' })
+      map = new TomTomMap({
+        style: 'standardLight',
+        mapLibre: {
+          container: node,
+          center: KIDAPAWAN_CENTER,
+          zoom: 13,
+        },
+      })
+      mapRef.current = map
+      const ml = map.mapLibreMap
+      popup = new Popup({ closeButton: true, maxWidth: '240px' })
+      popupRef.current = popup
+      ml.addControl(new NavigationControl({ showCompass: false }), 'top-right')
+
+      const resize = () => {
+        try {
+          ml.resize()
+        } catch {
+          /* map already removed */
+        }
+      }
+      ml.on('load', resize)
+      resizeObserver = new ResizeObserver(resize)
+      resizeObserver.observe(node)
+      resize()
+
       const [reportsModule, accessModule] = await Promise.all([
         CustomGeoJSONModule.get(map, {
           sources: {
@@ -151,22 +194,23 @@ export function AdminMapCanvas({ layer, reports, clusters, focusTicket }: AdminM
       reportsModule.events.reports.on('click', (feature, lngLat) => {
         const properties = feature.properties ?? {}
         if (typeof properties.point_count === 'number') {
-          map.mapLibreMap.easeTo({ center: lngLat, zoom: Math.min(map.mapLibreMap.getZoom() + 2, 17) })
+          map?.mapLibreMap.easeTo({ center: lngLat, zoom: Math.min(map.mapLibreMap.getZoom() + 2, 17) })
           return
         }
         const ticket = String(properties.ticket_number ?? '')
         const point = dataRef.current.reports.find((item) => item.ticket_number === ticket)
-        if (!point) return
+        if (!point || !map || !popup) return
         popup.setLngLat(lngLat).setHTML(reportPopup(point)).addTo(map.mapLibreMap)
       })
 
       accessModule.events.access.on('click', (feature, lngLat) => {
         const properties = feature.properties ?? {}
         if (typeof properties.point_count === 'number') {
-          map.mapLibreMap.easeTo({ center: lngLat, zoom: Math.min(map.mapLibreMap.getZoom() + 2, 16) })
+          map?.mapLibreMap.easeTo({ center: lngLat, zoom: Math.min(map.mapLibreMap.getZoom() + 2, 16) })
           return
         }
         const count = Number(properties.count ?? 1)
+        if (!map || !popup) return
         popup
           .setLngLat(lngLat)
           .setHTML(
@@ -175,10 +219,10 @@ export function AdminMapCanvas({ layer, reports, clusters, focusTicket }: AdminM
           .addTo(map.mapLibreMap)
       })
 
-      await syncLayers()
-    })()
+      await syncLayers(map, popup)
+    }
 
-    async function syncLayers() {
+    async function syncLayers(activeMap: TomTomMap, activePopup: Popup) {
       const current = dataRef.current
       const reportsModule = reportsModuleRef.current
       const accessModule = accessModuleRef.current
@@ -190,19 +234,31 @@ export function AdminMapCanvas({ layer, reports, clusters, focusTicket }: AdminM
       if (current.layer === 'reports' && current.focusTicket) {
         const focused = current.reports.find((item) => item.ticket_number === current.focusTicket)
         if (focused) {
-          map.mapLibreMap.flyTo({ center: [focused.longitude, focused.latitude], zoom: 15 })
-          popup.setLngLat([focused.longitude, focused.latitude]).setHTML(reportPopup(focused)).addTo(map.mapLibreMap)
+          activeMap.mapLibreMap.flyTo({ center: [focused.longitude, focused.latitude], zoom: 15 })
+          activePopup
+            .setLngLat([focused.longitude, focused.latitude])
+            .setHTML(reportPopup(focused))
+            .addTo(activeMap.mapLibreMap)
         }
       }
     }
 
     return () => {
       cancelled = true
-      popup.remove()
-      map.mapLibreMap.remove()
+      window.cancelAnimationFrame(frame)
+      resizeObserver?.disconnect()
+      popup?.remove()
+      if (map) {
+        try {
+          map.mapLibreMap.remove()
+        } catch {
+          /* already removed */
+        }
+      }
       mapRef.current = null
       reportsModuleRef.current = null
       accessModuleRef.current = null
+      popupRef.current = null
     }
   }, [])
 
@@ -228,7 +284,7 @@ export function AdminMapCanvas({ layer, reports, clusters, focusTicket }: AdminM
     }
   }, [layer, reports, clusters, focusTicket])
 
-  return <div ref={containerRef} className="h-[min(75vh,40rem)] min-h-80 w-full" />
+  return <div ref={containerRef} className="admin-map-canvas" />
 }
 
 function toReportCollection(reports: MapReportPoint[]) {

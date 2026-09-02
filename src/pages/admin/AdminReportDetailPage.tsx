@@ -160,7 +160,10 @@ export function AdminReportDetailPage() {
               </Link>
             </>
           ) : (
-            <p className="text-ink-500">No location was captured for this report.</p>
+            <p className="text-ink-500">
+              No GPS was captured. If the address can be mapped, a pin still appears on the admin
+              map.
+            </p>
           )}
         </CardBody>
       </Card>

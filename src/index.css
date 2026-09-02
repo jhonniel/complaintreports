@@ -252,3 +252,17 @@
     padding-inline: 1.75rem;
   }
 }
+
+.admin-map-canvas {
+  position: relative;
+  width: 100%;
+  min-height: 20rem;
+  height: min(75vh, 40rem);
+}
+
+.admin-map-canvas .maplibregl-map,
+.admin-map-canvas .maplibregl-canvas-container,
+.admin-map-canvas .maplibregl-canvas {
+  width: 100%;
+  height: 100%;
+}
