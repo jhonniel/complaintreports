@@ -1,6 +1,13 @@
 import { Link } from 'react-router-dom'
 import { cn } from '@/lib/cn'
 
+interface LogoProps {
+  variant?: 'full' | 'mark'
+  tone?: 'dark' | 'light'
+  className?: string
+  to?: string
+}
+
 export function Logo({ variant = 'full', className, to = '/' }: LogoProps) {
   return (
     <Link
