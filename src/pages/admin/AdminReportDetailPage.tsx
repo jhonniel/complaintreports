@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { AdminReportDetail, DepartmentOption, StaffOption } from '@shared/adminReport'
-import { GENDER_LABELS, STATUS_LABELS } from '@shared/report'
+import { GENDER_LABELS, STATUS_LABELS, normalizeTicketNumber } from '@shared/report'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Skeleton, SkeletonText } from '@/components/ui/Skeleton'
@@ -12,7 +12,8 @@ import { ApiError } from '@/services/api'
 import { formatDateTime, formatIsoDate, formatShortDate } from '@/utils/format'
 
 export function AdminReportDetailPage() {
-  const { ticketNumber = '' } = useParams()
+  const { ticketNumber: rawTicket = '' } = useParams()
+  const ticketNumber = normalizeTicketNumber(rawTicket)
   const [report, setReport] = useState<AdminReportDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

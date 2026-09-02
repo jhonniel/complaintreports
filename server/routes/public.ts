@@ -1,4 +1,4 @@
-import { Router } from 'express'
+import { Router, type Request } from 'express'
 import { createAccessLogSchema, normalizeAccessPage } from '../../shared/map.ts'
 import {
   createReportSchema,
@@ -98,11 +98,24 @@ publicRouter.post(
   }),
 )
 
-function readTicketQuery(req: { query: { ticket?: unknown } }) {
-  const raw = req.query.ticket
-  if (typeof raw === 'string') return raw
-  if (Array.isArray(raw) && typeof raw[0] === 'string') return raw[0]
+function firstString(value: unknown) {
+  if (typeof value === 'string') return value
+  if (Array.isArray(value) && typeof value[0] === 'string') return value[0]
   return ''
+}
+
+function ticketFromUrl(url: string) {
+  const queryIndex = url.indexOf('?')
+  if (queryIndex < 0) return ''
+  return new URLSearchParams(url.slice(queryIndex + 1)).get('ticket') ?? ''
+}
+
+function readTicketQuery(req: Request) {
+  return (
+    firstString(req.query.ticket) ||
+    ticketFromUrl(req.url ?? '') ||
+    ticketFromUrl(req.originalUrl ?? '')
+  )
 }
 
 async function sendPublicTrack(res: Parameters<typeof sendError>[0], rawTicket: string) {

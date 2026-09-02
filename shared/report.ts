@@ -48,10 +48,18 @@ export function formatTicketNumber(year: number, sequence: number) {
 }
 
 export function normalizeTicketNumber(value: string) {
-  const compact = value.trim().toUpperCase().replace(/[\s_]+/g, '').replace(/[–—]/g, '-')
+  const compact = value
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '')
+    .replace(/[–—−]/g, '-')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s_]+/g, '')
   const rest = compact.replace(/^TP-?/, '').replace(/-/g, '')
-  const match = /^(\d{4})(\d{1,6})$/.exec(rest)
-  if (match) return `TP-${match[1]}-${match[2].padStart(6, '0')}`
+  const exact = /^(\d{4})(\d{1,6})$/.exec(rest)
+  if (exact) return `TP-${exact[1]}-${exact[2].padStart(6, '0')}`
+  const embedded = /TP-?(\d{4})-?(\d{1,6})/.exec(compact)
+  if (embedded) return `TP-${embedded[1]}-${embedded[2].padStart(6, '0')}`
   return compact
 }
 

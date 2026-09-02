@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   parseAdminReportListQuery,
   type AdminReportListItem,
@@ -8,7 +8,14 @@ import {
   type DepartmentOption,
   type StaffOption,
 } from '@shared/adminReport'
-import { PRIORITY_LABELS, REPORT_PRIORITIES, REPORT_STATUSES, STATUS_LABELS } from '@shared/report'
+import {
+  PRIORITY_LABELS,
+  REPORT_PRIORITIES,
+  REPORT_STATUSES,
+  STATUS_LABELS,
+  isTicketNumber,
+  normalizeTicketNumber,
+} from '@shared/report'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -38,6 +45,7 @@ function setParam(params: URLSearchParams, key: string, value: string) {
 
 export function AdminReportsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const query = useMemo(() => queryFromParams(searchParams), [searchParams])
   const [searchInput, setSearchInput] = useState(query.q)
   const [items, setItems] = useState<AdminReportListItem[]>([])
@@ -137,14 +145,28 @@ export function AdminReportsPage() {
       <Card className="p-4">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div className="md:col-span-2">
-            <Label htmlFor="report-search">Search</Label>
-            <Input
-              id="report-search"
-              className="mt-1.5"
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder="Ticket number, category, or report text"
-            />
+            <form
+              onSubmit={(event) => {
+                event.preventDefault()
+                const ticket = normalizeTicketNumber(searchInput)
+                if (isTicketNumber(ticket)) {
+                  navigate(`/admin/reports/${encodeURIComponent(ticket)}`)
+                  return
+                }
+                setSearchParams(setParam(searchParams, 'q', searchInput), { replace: true })
+              }}
+            >
+              <Label htmlFor="report-search">Search</Label>
+              <Input
+                id="report-search"
+                className="mt-1.5"
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                placeholder="Ticket number, category, or report text"
+                name="q"
+                enterKeyHint="search"
+              />
+            </form>
           </div>
           <div>
             <Label htmlFor="filter-status">Status</Label>

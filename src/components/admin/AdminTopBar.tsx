@@ -7,6 +7,7 @@ import { fetchAnalytics } from '@/features/admin/analyticsApi'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { formatLongDate } from '@/utils/format'
 import { initials, ROLE_LABELS } from '@shared/auth'
+import { isTicketNumber, normalizeTicketNumber } from '@shared/report'
 
 interface AdminTopBarProps {
   onMenuClick: () => void
@@ -59,7 +60,16 @@ export function AdminTopBar({ onMenuClick, menuLabel }: AdminTopBarProps) {
         onSubmit={(event) => {
           event.preventDefault()
           const next = query.trim()
-          navigate(next ? `/admin/reports?q=${encodeURIComponent(next)}` : '/admin/reports')
+          if (!next) {
+            navigate('/admin/reports')
+            return
+          }
+          const ticket = normalizeTicketNumber(next)
+          if (isTicketNumber(ticket)) {
+            navigate(`/admin/reports/${encodeURIComponent(ticket)}`)
+            return
+          }
+          navigate(`/admin/reports?q=${encodeURIComponent(next)}`)
         }}
       >
         <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-400" />
