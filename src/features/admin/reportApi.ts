@@ -51,6 +51,10 @@ export function addReportNote(ticketNumber: string, input: AddNoteInput) {
   return api.post<AdminReportDetail>(`/admin/reports/${encodeURIComponent(ticketNumber)}/notes`, input)
 }
 
+export function deleteReport(ticketNumber: string) {
+  return api.delete<{ ok: true }>(`/admin/reports/${encodeURIComponent(ticketNumber)}`)
+}
+
 export function fetchDepartments() {
   return api.get<{ departments: CatalogItem[] }>('/admin/departments')
 }

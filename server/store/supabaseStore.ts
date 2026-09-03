@@ -15,7 +15,7 @@ import {
 } from '../lib/adminReports.ts'
 import { aggregateAccessLogs, mapFilterAsListQuery } from '../lib/mapAccess.ts'
 import { getSupabaseAdminClient } from '../lib/supabase.ts'
-import { photoViewUrl } from '../lib/spaces.ts'
+import { photoViewUrl, deletePhotoObject } from '../lib/spaces.ts'
 import {
   CatalogItemNotFoundError,
   DuplicateCatalogNameError,
@@ -558,6 +558,26 @@ export function createSupabaseStore(): ReportStore | null {
       }
       await db.from('reports').update({ updated_at: now }).eq('id', current.id)
       return loadDetail(ticketNumber)
+    },
+
+    async deleteReport(ticketNumber, _actor) {
+      const current = await loadDetail(ticketNumber)
+      const { data: attachments, error: attachmentError } = await db
+        .from('report_attachments')
+        .select('storage_key')
+        .eq('report_id', current.id)
+      if (attachmentError) {
+        logError('store', attachmentError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      for (const row of attachments ?? []) {
+        if (typeof row.storage_key === 'string') await deletePhotoObject(row.storage_key)
+      }
+      const { error } = await db.from('reports').delete().eq('id', current.id)
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
     },
 
     async listAdminCategories() {

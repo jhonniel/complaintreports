@@ -27,7 +27,7 @@ import {
 } from '../../shared/report.ts'
 import { buildAnalytics, reporterFingerprint } from '../lib/analytics.ts'
 import { geocodeKidapawanAddress } from '../lib/geocode.ts'
-import { photoViewUrl } from '../lib/spaces.ts'
+import { deletePhotoObject, photoViewUrl } from '../lib/spaces.ts'
 import {
   DepartmentNotFoundError,
   filterAdminReports,
@@ -628,6 +628,22 @@ export const localStore: ReportStore = {
       report.updated_at = now
       await writeDatabase(database)
       return toDetail(database, report)
+    })
+  },
+
+  deleteReport(ticketNumber, _actor) {
+    return withLock(async () => {
+      const database = await readDatabase()
+      const report = requireReport(database, ticketNumber)
+      const keys = database.attachments
+        .filter((entry) => entry.report_id === report.id)
+        .map((entry) => entry.storage_key)
+      database.reports = database.reports.filter((entry) => entry.id !== report.id)
+      database.statusHistory = database.statusHistory.filter((entry) => entry.report_id !== report.id)
+      database.notes = database.notes.filter((entry) => entry.report_id !== report.id)
+      database.attachments = database.attachments.filter((entry) => entry.report_id !== report.id)
+      await writeDatabase(database)
+      for (const key of keys) await deletePhotoObject(key)
     })
   },
 

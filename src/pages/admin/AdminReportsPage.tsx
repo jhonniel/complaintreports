@@ -28,8 +28,10 @@ import { ReportActionModals, type ReportAction } from '@/features/admin/ReportAc
 import { PriorityBadge, StatusBadge } from '@/features/admin/ReportBadges'
 import { fetchAdminCategories, catalogDisplayName, fetchAdminDepartments } from '@/features/admin/catalogApi'
 import { fetchAdminReports, fetchStaff } from '@/features/admin/reportApi'
+import { useAuth } from '@/features/auth/AuthProvider'
 import { ApiError } from '@/services/api'
 import { formatDateTime, formatShortDate } from '@/utils/format'
+import { canDeleteReports } from '@shared/auth'
 
 function queryFromParams(params: URLSearchParams): AdminReportListQuery {
   return parseAdminReportListQuery(Object.fromEntries(params.entries()))
@@ -46,6 +48,8 @@ function setParam(params: URLSearchParams, key: string, value: string) {
 export function AdminReportsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
+  const { profile } = useAuth()
+  const canDelete = profile ? canDeleteReports(profile.role) : false
   const query = useMemo(() => queryFromParams(searchParams), [searchParams])
   const [searchInput, setSearchInput] = useState(query.q)
   const [items, setItems] = useState<AdminReportListItem[]>([])
@@ -375,6 +379,19 @@ export function AdminReportsPage() {
                       >
                         Note
                       </Button>
+                      {canDelete ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 px-2 text-danger-700 hover:bg-danger-50"
+                          onClick={() => {
+                            setActive(item)
+                            setAction('delete')
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      ) : null}
                       <Link
                         className="inline-flex h-8 items-center px-2 text-sm font-semibold text-pine-800 hover:underline"
                         to={`/admin/reports/${item.ticket_number}#location`}
@@ -429,6 +446,16 @@ export function AdminReportsPage() {
             setActive(null)
           }}
           onSaved={() => {
+            void fetchAdminReports(query).then((result) => {
+              setItems(result.items)
+              setTotal(result.total)
+              setTotalPages(result.total_pages)
+              setPage(result.page)
+            })
+          }}
+          onDeleted={() => {
+            setAction(null)
+            setActive(null)
             void fetchAdminReports(query).then((result) => {
               setItems(result.items)
               setTotal(result.total)

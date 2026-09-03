@@ -16,6 +16,10 @@ export function canManageCatalog(role: AdminRole) {
   return role === 'admin' || role === 'super_admin'
 }
 
+export function canDeleteReports(role: AdminRole) {
+  return isAdminRole(role)
+}
+
 export function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean)
   if (parts.length === 0) return 'AD'

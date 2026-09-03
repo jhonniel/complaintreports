@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { AdminReportDetail, DepartmentOption, StaffOption } from '@shared/adminReport'
 import { GENDER_LABELS, STATUS_LABELS, normalizeTicketNumber } from '@shared/report'
 import { Button } from '@/components/ui/Button'
@@ -8,9 +8,11 @@ import { Skeleton, SkeletonText } from '@/components/ui/Skeleton'
 import { ReportActionModals, type ReportAction } from '@/features/admin/ReportActionModals'
 import { PriorityBadge, StatusBadge } from '@/features/admin/ReportBadges'
 import { fetchAdminReport, fetchDepartments, fetchStaff } from '@/features/admin/reportApi'
+import { useAuth } from '@/features/auth/AuthProvider'
 import { isTomTomConfigured } from '@/lib/tomtom'
 import { ApiError } from '@/services/api'
 import { formatDateTime, formatIsoDate, formatShortDate } from '@/utils/format'
+import { canDeleteReports } from '@shared/auth'
 
 const AdminMapCanvas = lazy(() =>
   import('@/features/admin/AdminMapCanvas').then((module) => ({ default: module.AdminMapCanvas })),
@@ -19,6 +21,9 @@ const AdminMapCanvas = lazy(() =>
 export function AdminReportDetailPage() {
   const { ticketNumber: rawTicket = '' } = useParams()
   const ticketNumber = normalizeTicketNumber(rawTicket)
+  const navigate = useNavigate()
+  const { profile } = useAuth()
+  const canDelete = profile ? canDeleteReports(profile.role) : false
   const [report, setReport] = useState<AdminReportDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -104,6 +109,11 @@ export function AdminReportDetailPage() {
           <Button size="sm" onClick={() => setAction('note')}>
             Add note
           </Button>
+          {canDelete ? (
+            <Button size="sm" variant="danger" onClick={() => setAction('delete')}>
+              Delete
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -296,6 +306,7 @@ export function AdminReportDetailPage() {
         staff={staff}
         onClose={() => setAction(null)}
         onSaved={setReport}
+        onDeleted={() => navigate('/admin/reports', { replace: true })}
       />
     </div>
   )

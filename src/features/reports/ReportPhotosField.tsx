@@ -75,5 +75,5 @@ export function ReportPhotosField({
 }
 
 export function formatPhotoLimitHint() {
-  return `Optional. Up to ${REPORT_PHOTO_MAX_COUNT} photos, ${Math.round(REPORT_PHOTO_MAX_TOTAL_BYTES / (1024 * 1024))} MB total. Photos are compressed before upload.`
+  return `Optional. Up to ${REPORT_PHOTO_MAX_COUNT} photos, ${Math.round(REPORT_PHOTO_MAX_TOTAL_BYTES / (1024 * 1024))} MB total.`
 }

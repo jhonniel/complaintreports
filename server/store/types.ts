@@ -59,6 +59,7 @@ export interface ReportStore {
     actor: AdminActorRef,
   ): Promise<AdminReportDetail>
   addReportNote(ticketNumber: string, note: string, actor: AdminActorRef): Promise<AdminReportDetail>
+  deleteReport(ticketNumber: string, actor: AdminActorRef): Promise<void>
   listAdminCategories(): Promise<CatalogItem[]>
   createCategory(input: CatalogCreateInput): Promise<CatalogItem>
   updateCategory(id: string, input: CatalogUpdateInput): Promise<CatalogItem>

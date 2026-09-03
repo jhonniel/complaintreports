@@ -1,4 +1,4 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import {
   REPORT_PHOTO_MAX_FILE_BYTES,
@@ -101,4 +101,14 @@ export function publicPhotoUrl(key: string) {
 
 export async function photoViewUrl(key: string) {
   return (await signedPhotoUrl(key)) ?? publicPhotoUrl(key)
+}
+
+export async function deletePhotoObject(key: string) {
+  const s3 = spacesClient()
+  if (!s3 || !env.spacesBucket || !isManagedPhotoKey(key)) return
+  try {
+    await s3.send(new DeleteObjectCommand({ Bucket: env.spacesBucket, Key: key }))
+  } catch {
+    /* Best effort: the database row is still removed. */
+  }
 }

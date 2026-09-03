@@ -250,6 +250,30 @@ adminRouter.post(
   }),
 )
 
+adminRouter.delete(
+  '/reports/:ticketNumber',
+  asyncHandler(async (req, res) => {
+    const actor = actorFrom(res)
+    if (!actor) {
+      sendError(res, 401, 'Authentication is required.')
+      return
+    }
+    const ticketNumber = readTicketParam(req)
+    if (!isTicketNumber(ticketNumber)) {
+      sendError(res, 400, 'Enter a valid ticket number.')
+      return
+    }
+    try {
+      await getReportStore().deleteReport(ticketNumber, actor)
+      res.json({ ok: true })
+    } catch (error) {
+      if (sendStoreError(res, error)) return
+      logError('admin', error)
+      sendError(res, 500, 'Unable to delete this report.')
+    }
+  }),
+)
+
 adminRouter.get(
   '/analytics',
   asyncHandler(async (req, res) => {

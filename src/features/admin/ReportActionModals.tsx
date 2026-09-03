@@ -10,12 +10,13 @@ import { useToast } from '@/components/ui/Toast'
 import {
   addReportNote,
   assignReport,
+  deleteReport,
   updateReportPriority,
   updateReportStatus,
 } from '@/features/admin/reportApi'
 import { ApiError } from '@/services/api'
 
-export type ReportAction = 'status' | 'priority' | 'assign' | 'note'
+export type ReportAction = 'status' | 'priority' | 'assign' | 'note' | 'delete'
 
 interface ReportActionModalsProps {
   ticketNumber: string
@@ -28,6 +29,7 @@ interface ReportActionModalsProps {
   staff: StaffOption[]
   onClose: () => void
   onSaved: (report: AdminReportDetail) => void
+  onDeleted?: () => void
 }
 
 export function ReportActionModals({
@@ -41,6 +43,7 @@ export function ReportActionModals({
   staff,
   onClose,
   onSaved,
+  onDeleted,
 }: ReportActionModalsProps) {
   const { toast } = useToast()
   const [saving, setSaving] = useState(false)
@@ -247,6 +250,48 @@ export function ReportActionModals({
           <Textarea value={note} onChange={(event) => setNote(event.target.value)} maxLength={2000} />
         </Field>
         {error && action === 'note' ? <p className="mt-3 text-sm text-danger-700">{error}</p> : null}
+      </Modal>
+
+      <Modal
+        open={action === 'delete'}
+        title="Delete report"
+        description={`Ticket ${ticketNumber}`}
+        onClose={saving ? undefined : onClose}
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose} disabled={saving}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              loading={saving}
+              onClick={() => {
+                void (async () => {
+                  setSaving(true)
+                  setError(null)
+                  try {
+                    await deleteReport(ticketNumber)
+                    toast({ variant: 'success', title: 'Report deleted' })
+                    onDeleted?.()
+                    onClose()
+                  } catch (err) {
+                    setError(err instanceof ApiError ? err.message : 'Unable to delete this report.')
+                  } finally {
+                    setSaving(false)
+                  }
+                })()
+              }}
+            >
+              Delete report
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-sm leading-relaxed text-ink-700">
+          This permanently removes the ticket, photos, notes, and reporter details. Tracking this
+          number will no longer work.
+        </p>
+        {error && action === 'delete' ? <p className="mt-3 text-sm text-danger-700">{error}</p> : null}
       </Modal>
     </>
   )
