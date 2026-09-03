@@ -1,6 +1,7 @@
 import type {
   FacebookConnectionStatus,
   FacebookConvertInput,
+  FacebookImportCommentsResult,
   FacebookImportInput,
   FacebookIntakeItem,
   FacebookIntakeStatus,
@@ -12,8 +13,38 @@ export function fetchFacebookStatus() {
   return api.get<FacebookConnectionStatus>('/admin/facebook/status')
 }
 
+export function startFacebookOAuth() {
+  return api.post<{ url: string; redirect_uri: string }>('/admin/facebook/oauth/start', {
+    origin: window.location.origin,
+  })
+}
+
+export function completeFacebookOAuth(code: string, state: string) {
+  return api.post<{
+    connected: boolean
+    session_id: string | null
+    page: { page_id: string; page_name: string } | null
+    pages: { id: string; name: string }[]
+  }>('/admin/facebook/oauth/complete', {
+    code,
+    state,
+    origin: window.location.origin,
+  })
+}
+
+export function selectFacebookPage(sessionId: string, pageId: string) {
+  return api.post<{ page: { page_id: string; page_name: string } }>('/admin/facebook/oauth/select', {
+    session_id: sessionId,
+    page_id: pageId,
+  })
+}
+
+export function disconnectFacebook() {
+  return api.post<{ ok: true }>('/admin/facebook/disconnect')
+}
+
 export function lookupFacebookPost(url: string) {
-  return api.post<{ post: FacebookPostPreview }>('/admin/facebook/lookup', { url })
+  return api.post<{ post: FacebookPostPreview; comments: FacebookPostPreview[] }>('/admin/facebook/lookup', { url })
 }
 
 export function fetchFacebookPagePosts() {
@@ -33,6 +64,15 @@ export function fetchFacebookIntakes(status?: FacebookIntakeStatus | 'all') {
 
 export function importFacebookIntake(input: FacebookImportInput) {
   return api.post<{ intake: FacebookIntakeItem }>('/admin/facebook/intakes', input)
+}
+
+export function importFacebookComments(input: {
+  url?: string
+  post_id?: string
+  category_id?: string
+  include_post?: boolean
+}) {
+  return api.post<FacebookImportCommentsResult & { post: FacebookPostPreview }>('/admin/facebook/import-comments', input)
 }
 
 export function convertFacebookIntake(id: string, input: FacebookConvertInput) {

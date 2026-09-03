@@ -46,7 +46,8 @@ import {
   normalizeFacebookImport,
   toFacebookIntakeItem,
 } from '../lib/facebookIntake.ts'
-import { isFacebookIntakeStatus } from '../../shared/facebookIntake.ts'
+import { FacebookOauthSessionError, type FacebookOauthPage } from '../lib/facebookConnection.ts'
+import { isFacebookIntakeStatus, reportInputFromFacebookPreview } from '../../shared/facebookIntake.ts'
 
 function asName(value: unknown): string | null {
   const relation = value as { name?: string } | { name?: string }[] | null
@@ -983,6 +984,233 @@ export function createSupabaseStore(): ReportStore | null {
       }
       if (!data) throw new FacebookIntakeNotConvertibleError()
       return toFacebookIntakeItem(data)
+    },
+
+    async importFacebookPreviewsAsReports(items, categoryId, actor) {
+      if (items.length === 0) {
+        return { created: 0, skipped: 0, comment_count: 0, intakes: [] }
+      }
+      const postIds = [...new Set(items.map((item) => item.facebook_post_id))]
+      const { data: existingRows, error: existingError } = await db
+        .from('facebook_intakes')
+        .select(
+          'id, facebook_post_id, facebook_comment_id, permalink, author_name, message, posted_at, kind, status, ticket_number, imported_by_name, created_at',
+        )
+        .in('facebook_post_id', postIds)
+      if (existingError) {
+        logError('store', existingError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      const existingByKey = new Map(
+        (existingRows ?? []).map((row) => [`${row.facebook_post_id}:${row.facebook_comment_id ?? ''}`, row]),
+      )
+      let created = 0
+      let skipped = 0
+      const intakes = []
+      for (const item of items) {
+        const key = `${item.facebook_post_id}:${item.facebook_comment_id ?? ''}`
+        const existing = existingByKey.get(key)
+        if (existing && existing.status !== 'new') {
+          skipped += 1
+          continue
+        }
+        const payload = reportInputFromFacebookPreview(item, categoryId)
+        if (existing) {
+          const converted = await this.convertFacebookIntake(existing.id, payload, actor)
+          created += 1
+          intakes.push(converted)
+          existingByKey.set(key, converted)
+          continue
+        }
+        try {
+          const intake = await this.createFacebookIntake(
+            {
+              facebook_post_id: item.facebook_post_id,
+              facebook_comment_id: item.facebook_comment_id,
+              permalink: item.permalink,
+              author_name: item.author_name,
+              message: item.message.trim() || 'Facebook comment',
+              posted_at: item.posted_at,
+              kind: item.kind,
+            },
+            actor,
+          )
+          const converted = await this.convertFacebookIntake(intake.id, payload, actor)
+          created += 1
+          intakes.push(converted)
+          existingByKey.set(key, converted)
+        } catch (error) {
+          if (error instanceof DuplicateFacebookIntakeError) {
+            skipped += 1
+            continue
+          }
+          throw error
+        }
+      }
+      return {
+        created,
+        skipped,
+        comment_count: items.filter((item) => item.kind === 'comment').length,
+        intakes,
+      }
+    },
+
+    async getFacebookConnection() {
+      const { data, error } = await db
+        .from('facebook_connections')
+        .select('page_id, page_name, access_token')
+        .eq('is_active', true)
+        .maybeSingle()
+      if (error) {
+        if (error.code === 'PGRST205') return null
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (!data?.access_token || !data.page_id) return null
+      return {
+        page_id: data.page_id as string,
+        page_name: (data.page_name as string) || data.page_id,
+        access_token: data.access_token as string,
+      }
+    },
+
+    async saveFacebookConnection(input, actor) {
+      const now = new Date().toISOString()
+      const { error: clearError } = await db.from('facebook_connections').update({ is_active: false, updated_at: now })
+      if (clearError) {
+        logError('store', clearError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      const { data, error } = await db
+        .from('facebook_connections')
+        .upsert(
+          {
+            page_id: input.page_id,
+            page_name: input.page_name,
+            access_token: input.access_token,
+            is_active: true,
+            connected_by: actor.userId,
+            connected_by_name: actor.fullName,
+            updated_at: now,
+          },
+          { onConflict: 'page_id' },
+        )
+        .select('page_id, page_name')
+        .single()
+      if (error || !data) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      return { page_id: data.page_id as string, page_name: data.page_name as string }
+    },
+
+    async deleteFacebookConnection() {
+      const { error } = await db.from('facebook_connections').update({
+        is_active: false,
+        updated_at: new Date().toISOString(),
+      })
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+    },
+
+    async createFacebookOauthSession(adminUserId, state, expiresAt) {
+      await db.from('facebook_oauth_sessions').delete().lt('expires_at', new Date().toISOString())
+      const { data, error } = await db
+        .from('facebook_oauth_sessions')
+        .insert({
+          state,
+          admin_user_id: adminUserId,
+          expires_at: expiresAt,
+        })
+        .select('id, state, admin_user_id, pages, expires_at')
+        .single()
+      if (error || !data) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      return {
+        id: data.id as string,
+        state: data.state as string,
+        admin_user_id: data.admin_user_id as string,
+        pages: null,
+        expires_at: data.expires_at as string,
+      }
+    },
+
+    async getFacebookOauthSession(state, adminUserId) {
+      const { data, error } = await db
+        .from('facebook_oauth_sessions')
+        .select('id, state, admin_user_id, pages, expires_at')
+        .eq('state', state)
+        .eq('admin_user_id', adminUserId)
+        .gt('expires_at', new Date().toISOString())
+        .maybeSingle()
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (!data) return null
+      return {
+        id: data.id as string,
+        state: data.state as string,
+        admin_user_id: data.admin_user_id as string,
+        pages: Array.isArray(data.pages) ? (data.pages as FacebookOauthPage[]) : null,
+        expires_at: data.expires_at as string,
+      }
+    },
+
+    async saveFacebookOauthPages(sessionId, pages) {
+      const { data, error } = await db
+        .from('facebook_oauth_sessions')
+        .update({ pages })
+        .eq('id', sessionId)
+        .gt('expires_at', new Date().toISOString())
+        .select('id, state, admin_user_id, pages, expires_at')
+        .maybeSingle()
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (!data) throw new FacebookOauthSessionError()
+      return {
+        id: data.id as string,
+        state: data.state as string,
+        admin_user_id: data.admin_user_id as string,
+        pages,
+        expires_at: data.expires_at as string,
+      }
+    },
+
+    async getFacebookOauthSessionById(id, adminUserId) {
+      const { data, error } = await db
+        .from('facebook_oauth_sessions')
+        .select('id, state, admin_user_id, pages, expires_at')
+        .eq('id', id)
+        .eq('admin_user_id', adminUserId)
+        .gt('expires_at', new Date().toISOString())
+        .maybeSingle()
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (!data) return null
+      return {
+        id: data.id as string,
+        state: data.state as string,
+        admin_user_id: data.admin_user_id as string,
+        pages: Array.isArray(data.pages) ? (data.pages as FacebookOauthPage[]) : null,
+        expires_at: data.expires_at as string,
+      }
+    },
+
+    async deleteFacebookOauthSession(id) {
+      const { error } = await db.from('facebook_oauth_sessions').delete().eq('id', id)
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
     },
   }
 }

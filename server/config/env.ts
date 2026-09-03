@@ -60,6 +60,8 @@ export const env = {
   spacesExpirationMinutes: Math.max(5, Number(process.env.DIGITALOCEAN_SPACES_EXPIRATION ?? 30) || 30),
   facebookAccessToken: required('FACEBOOK_ACCESS_TOKEN'),
   facebookPageId: required('FACEBOOK_PAGE_ID'),
+  facebookAppId: required('FACEBOOK_APP_ID'),
+  facebookAppSecret: required('FACEBOOK_APP_SECRET'),
   isVercel: process.env.VERCEL === '1',
 }
 

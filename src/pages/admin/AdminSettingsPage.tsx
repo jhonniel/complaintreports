@@ -4,16 +4,26 @@ import { useAuth } from '@/features/auth/AuthProvider'
 import { fetchFacebookStatus } from '@/features/admin/facebookApi'
 import { CURRENT_PHASE, CURRENT_PHASE_LABEL } from '@/lib/constants'
 import { ROLE_LABELS } from '@shared/auth'
+import type { FacebookConnectionStatus } from '@shared/facebookIntake'
 import { useEffect, useState } from 'react'
 
 export function AdminSettingsPage() {
   const { profile, isConfigured, signOut } = useAuth()
-  const [facebook, setFacebook] = useState<{ configured: boolean; page_configured: boolean } | null>(null)
+  const [facebook, setFacebook] = useState<FacebookConnectionStatus | null>(null)
 
   useEffect(() => {
     void fetchFacebookStatus()
       .then(setFacebook)
-      .catch(() => setFacebook({ configured: false, page_configured: false }))
+      .catch(() =>
+        setFacebook({
+          oauth_ready: false,
+          configured: false,
+          page_configured: false,
+          page_id: null,
+          page_name: null,
+          source: null,
+        }),
+      )
   }, [])
 
   return (
@@ -59,11 +69,11 @@ export function AdminSettingsPage() {
           <p>
             Facebook intake:{' '}
             <strong>
-              {facebook?.configured
-                ? facebook.page_configured
-                  ? 'Token and Page ID set'
-                  : 'Token set'
-                : 'Not connected'}
+              {facebook?.page_name
+                ? facebook.page_name
+                : facebook?.configured
+                  ? 'Connected'
+                  : 'Not connected'}
             </strong>
           </p>
           <p className="text-ink-500">

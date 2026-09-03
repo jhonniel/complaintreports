@@ -14,6 +14,7 @@ import { hasDuplicateCatalogName } from '../../shared/catalog.ts'
 import { DEFAULT_DEPARTMENTS } from '../../shared/departments.ts'
 import { normalizeAccessPage } from '../../shared/map.ts'
 import type { FacebookIntakeStatus } from '../../shared/facebookIntake.ts'
+import { reportInputFromFacebookPreview } from '../../shared/facebookIntake.ts'
 import {
   currentManilaYear,
   formatTicketNumber,
@@ -53,6 +54,7 @@ import {
   sameFacebookTarget,
   toFacebookIntakeItem,
 } from '../lib/facebookIntake.ts'
+import { FacebookOauthSessionError } from '../lib/facebookConnection.ts'
 import { aggregateAccessLogs, mapFilterAsListQuery } from '../lib/mapAccess.ts'
 import type { CreatedReport, ReportStore } from './types.ts'
 
@@ -161,6 +163,23 @@ interface LocalFacebookIntake {
   created_at: string
 }
 
+interface LocalFacebookConnection {
+  page_id: string
+  page_name: string
+  access_token: string
+  connected_by: string
+  connected_by_name: string
+  created_at: string
+}
+
+interface LocalFacebookOauthSession {
+  id: string
+  state: string
+  admin_user_id: string
+  pages: { id: string; name: string; access_token: string }[] | null
+  expires_at: string
+}
+
 interface LocalDatabase {
   ticketCounters: Record<string, number>
   categories: LocalCategory[]
@@ -172,6 +191,8 @@ interface LocalDatabase {
   accessLogs: LocalAccessLog[]
   attachments: LocalAttachment[]
   facebookIntakes: LocalFacebookIntake[]
+  facebookConnection: LocalFacebookConnection | null
+  facebookOauthSessions: LocalFacebookOauthSession[]
 }
 
 const dataDir = path.join(process.cwd(), 'server', 'data')
@@ -213,6 +234,8 @@ function emptyDatabase(): LocalDatabase {
     accessLogs: seedAccessLogs(),
     attachments: [],
     facebookIntakes: [],
+    facebookConnection: null,
+    facebookOauthSessions: [],
   }
 }
 
@@ -292,6 +315,8 @@ async function readDatabase(): Promise<LocalDatabase> {
       accessLogs: parsed.accessLogs?.length ? parsed.accessLogs : seedAccessLogs(),
       attachments: parsed.attachments ?? [],
       facebookIntakes: parsed.facebookIntakes ?? [],
+      facebookConnection: parsed.facebookConnection ?? null,
+      facebookOauthSessions: parsed.facebookOauthSessions ?? [],
     }
   } catch {
     await mkdir(dataDir, { recursive: true })
@@ -977,6 +1002,157 @@ export const localStore: ReportStore = {
       intake.status = 'dismissed'
       await writeDatabase(database)
       return toFacebookIntakeItem(intake)
+    })
+  },
+
+  importFacebookPreviewsAsReports(items, categoryId, actor) {
+    return withLock(async () => {
+      const database = await readDatabase()
+      rememberStaff(database, actor)
+      let created = 0
+      let skipped = 0
+      const intakes = []
+      for (const item of items) {
+        const payload = normalizeFacebookImport({
+          facebook_post_id: item.facebook_post_id,
+          facebook_comment_id: item.facebook_comment_id,
+          permalink: item.permalink,
+          author_name: item.author_name,
+          message: item.message.trim() || 'Facebook comment',
+          posted_at: item.posted_at,
+          kind: item.kind,
+        })
+        let row = database.facebookIntakes.find((entry) => sameFacebookTarget(entry, payload))
+        if (row && row.status !== 'new') {
+          skipped += 1
+          continue
+        }
+        const now = new Date().toISOString()
+        if (!row) {
+          row = {
+            id: crypto.randomUUID(),
+            ...payload,
+            status: 'new',
+            report_id: null,
+            ticket_number: null,
+            imported_by: actor.userId,
+            imported_by_name: actor.fullName,
+            created_at: now,
+          }
+          database.facebookIntakes.push(row)
+        }
+        const report = insertLocalReport(
+          database,
+          asCreateReportInput(reportInputFromFacebookPreview(item, categoryId)),
+          `Imported from Facebook by ${actor.fullName}.`,
+        )
+        database.notes.push({
+          id: crypto.randomUUID(),
+          report_id: report.id,
+          admin_id: actor.userId,
+          admin_name: actor.fullName,
+          note: `Facebook ${item.kind}: ${item.permalink}`,
+          created_at: now,
+        })
+        row.status = 'converted'
+        row.report_id = report.id
+        row.ticket_number = report.ticket_number
+        created += 1
+        intakes.push(toFacebookIntakeItem(row))
+      }
+      await writeDatabase(database)
+      return { created, skipped, comment_count: items.filter((item) => item.kind === 'comment').length, intakes }
+    })
+  },
+
+  async getFacebookConnection() {
+    const database = await readDatabase()
+    const row = database.facebookConnection
+    if (!row) return null
+    return { page_id: row.page_id, page_name: row.page_name, access_token: row.access_token }
+  },
+
+  saveFacebookConnection(input, actor) {
+    return withLock(async () => {
+      const database = await readDatabase()
+      rememberStaff(database, actor)
+      database.facebookConnection = {
+        page_id: input.page_id,
+        page_name: input.page_name,
+        access_token: input.access_token,
+        connected_by: actor.userId,
+        connected_by_name: actor.fullName,
+        created_at: new Date().toISOString(),
+      }
+      await writeDatabase(database)
+      return { page_id: input.page_id, page_name: input.page_name }
+    })
+  },
+
+  deleteFacebookConnection() {
+    return withLock(async () => {
+      const database = await readDatabase()
+      database.facebookConnection = null
+      await writeDatabase(database)
+    })
+  },
+
+  createFacebookOauthSession(adminUserId, state, expiresAt) {
+    return withLock(async () => {
+      const database = await readDatabase()
+      const now = Date.now()
+      database.facebookOauthSessions = database.facebookOauthSessions.filter(
+        (entry) => new Date(entry.expires_at).getTime() > now,
+      )
+      const row: LocalFacebookOauthSession = {
+        id: crypto.randomUUID(),
+        state,
+        admin_user_id: adminUserId,
+        pages: null,
+        expires_at: expiresAt,
+      }
+      database.facebookOauthSessions.push(row)
+      await writeDatabase(database)
+      return row
+    })
+  },
+
+  async getFacebookOauthSession(state, adminUserId) {
+    const database = await readDatabase()
+    const row = database.facebookOauthSessions.find(
+      (entry) => entry.state === state && entry.admin_user_id === adminUserId,
+    )
+    if (!row || new Date(row.expires_at).getTime() <= Date.now()) return null
+    return row
+  },
+
+  saveFacebookOauthPages(sessionId, pages) {
+    return withLock(async () => {
+      const database = await readDatabase()
+      const row = database.facebookOauthSessions.find((entry) => entry.id === sessionId)
+      if (!row || new Date(row.expires_at).getTime() <= Date.now()) {
+        throw new FacebookOauthSessionError()
+      }
+      row.pages = pages
+      await writeDatabase(database)
+      return row
+    })
+  },
+
+  async getFacebookOauthSessionById(id, adminUserId) {
+    const database = await readDatabase()
+    const row = database.facebookOauthSessions.find(
+      (entry) => entry.id === id && entry.admin_user_id === adminUserId,
+    )
+    if (!row || new Date(row.expires_at).getTime() <= Date.now()) return null
+    return row
+  },
+
+  deleteFacebookOauthSession(id) {
+    return withLock(async () => {
+      const database = await readDatabase()
+      database.facebookOauthSessions = database.facebookOauthSessions.filter((entry) => entry.id !== id)
+      await writeDatabase(database)
     })
   },
 }

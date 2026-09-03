@@ -23,10 +23,13 @@ import type {
 } from '../../shared/map.ts'
 import type {
   FacebookConvertInput,
+  FacebookImportCommentsResult,
   FacebookImportInput,
   FacebookIntakeItem,
   FacebookIntakeStatus,
+  FacebookPostPreview,
 } from '../../shared/facebookIntake.ts'
+import type { FacebookConnectionRecord, FacebookOauthPage, FacebookOauthSessionRecord } from '../lib/facebookConnection.ts'
 import type { CreateReportInput, PublicCategory, PublicTrackView } from '../../shared/report.ts'
 
 export interface CreatedReport {
@@ -84,4 +87,20 @@ export interface ReportStore {
     actor: AdminActorRef,
   ): Promise<FacebookIntakeItem>
   dismissFacebookIntake(id: string, actor: AdminActorRef): Promise<FacebookIntakeItem>
+  importFacebookPreviewsAsReports(
+    items: FacebookPostPreview[],
+    categoryId: string,
+    actor: AdminActorRef,
+  ): Promise<FacebookImportCommentsResult>
+  getFacebookConnection(): Promise<FacebookConnectionRecord | null>
+  saveFacebookConnection(
+    input: FacebookConnectionRecord,
+    actor: AdminActorRef,
+  ): Promise<{ page_id: string; page_name: string }>
+  deleteFacebookConnection(): Promise<void>
+  createFacebookOauthSession(adminUserId: string, state: string, expiresAt: string): Promise<FacebookOauthSessionRecord>
+  getFacebookOauthSession(state: string, adminUserId: string): Promise<FacebookOauthSessionRecord | null>
+  saveFacebookOauthPages(sessionId: string, pages: FacebookOauthPage[]): Promise<FacebookOauthSessionRecord>
+  getFacebookOauthSessionById(id: string, adminUserId: string): Promise<FacebookOauthSessionRecord | null>
+  deleteFacebookOauthSession(id: string): Promise<void>
 }
