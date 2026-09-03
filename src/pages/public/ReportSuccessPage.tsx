@@ -56,41 +56,41 @@ export function ReportSuccessPage() {
   }
 
   return (
-    <section className="container-page animate-fade-up max-w-xl py-12 md:py-16">
-      <div className="flex size-12 items-center justify-center rounded-full bg-pine-100 text-pine-800">
-        <Check className="size-6" aria-hidden="true" />
+    <section className="container-page animate-fade-up max-w-xl py-12 text-center md:py-16">
+      <div className="mx-auto flex size-16 items-center justify-center rounded-full bg-pine-100 text-pine-800">
+        <Check className="size-8" aria-hidden="true" />
       </div>
-      <h1 className="mt-5 font-display text-3xl font-semibold md:text-4xl">
+      <h1 className="mt-5 font-display text-3xl font-semibold text-pretty md:text-4xl">
         Your report has been successfully submitted.
       </h1>
-      <p className="mt-3 text-ink-600">
+      <p className="mx-auto mt-3 max-w-md text-ink-600">
         Please save your ticket number. You can use it to check the status of your report. If you
         entered an email, we also sent the ticket number there.
       </p>
       <Card className="mt-8">
-        <CardBody className="p-6">
+        <CardBody className="p-6 sm:p-8">
           <p className="text-xs font-semibold tracking-[0.16em] text-ink-500 uppercase">Ticket number</p>
-          <p className="mt-2 font-mono text-2xl font-semibold tracking-wide text-pine-900 md:text-3xl">
+          <p className="mt-3 font-mono text-2xl font-semibold tracking-wide break-all text-pine-900 md:text-3xl">
             {result.ticket_number}
           </p>
-          <Button className="mt-5 w-full sm:w-auto" variant="outline" onClick={() => void copyTicket()}>
+          <Button className="mx-auto mt-6 w-full sm:w-auto" variant="outline" onClick={() => void copyTicket()}>
             <Copy className="size-4" />
             {copied ? 'Copied' : 'Copy ticket number'}
           </Button>
         </CardBody>
       </Card>
-      <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-        <Link to={`/track?ticket=${encodeURIComponent(result.ticket_number)}`}>
+      <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+        <Link to={`/track?ticket=${encodeURIComponent(result.ticket_number)}`} className="w-full sm:w-auto">
           <Button className="w-full sm:w-auto">Track this report</Button>
         </Link>
         {isAdmin ? (
-          <Link to={`/admin/reports/${encodeURIComponent(result.ticket_number)}`}>
+          <Link to={`/admin/reports/${encodeURIComponent(result.ticket_number)}`} className="w-full sm:w-auto">
             <Button variant="outline" className="w-full sm:w-auto">
               View in admin
             </Button>
           </Link>
         ) : null}
-        <Link to={isAdmin ? '/admin/dashboard' : '/'}>
+        <Link to={isAdmin ? '/admin/dashboard' : '/'} className="w-full sm:w-auto">
           <Button variant="ghost" className="w-full sm:w-auto">
             {isAdmin ? 'Back to admin' : 'Return home'}
           </Button>

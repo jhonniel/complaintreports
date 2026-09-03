@@ -18,10 +18,15 @@ export const TICKET_PREFIX = 'TP'
 export const TICKET_PATTERN = /^TP-\d{4}-\d{6}$/
 export const MANILA_TIME_ZONE = 'Asia/Manila'
 
-export const PH_MOBILE_PATTERN = /^(?:\+?63|0)?9\d{9}$/
+export const PH_MOBILE_PATTERN = /^09\d{9}$/
+export const PH_MOBILE_DIGIT_COUNT = 11
 
 export function stripPhone(value: string) {
-  return value.replace(/[\s()-]/g, '')
+  return value.replace(/\D/g, '')
+}
+
+export function limitPhoneDigits(value: string) {
+  return stripPhone(value).slice(0, PH_MOBILE_DIGIT_COUNT)
 }
 
 export function isPhilippineMobile(value: string) {
@@ -30,10 +35,8 @@ export function isPhilippineMobile(value: string) {
 
 export function normalizePhilippineMobile(value: string) {
   const compact = stripPhone(value)
-  if (compact.startsWith('+639') && compact.length === 13) return compact
-  if (compact.startsWith('639') && compact.length === 12) return `+${compact}`
   if (compact.startsWith('09') && compact.length === 11) return `+63${compact.slice(1)}`
-  if (compact.startsWith('9') && compact.length === 10) return `+63${compact}`
+  if (compact.startsWith('63') && compact.length === 12) return `+${compact}`
   return compact
 }
 
@@ -45,6 +48,12 @@ export function currentManilaYear(date = new Date()) {
 
 export function formatTicketNumber(year: number, sequence: number) {
   return `${TICKET_PREFIX}-${year}-${String(sequence).padStart(6, '0')}`
+}
+
+export function randomTicketSerial() {
+  const bytes = new Uint32Array(1)
+  crypto.getRandomValues(bytes)
+  return 1 + (bytes[0] % 999_999)
 }
 
 export function normalizeTicketNumber(value: string) {
@@ -148,8 +157,8 @@ function isReasonableBirthDate(value: string) {
 
 export const locationSchema = z
   .object({
-    latitude: z.number().gte(-90).lte(90),
-    longitude: z.number().gte(-180).lte(180),
+    latitude: z.coerce.number().gte(-90).lte(90),
+    longitude: z.coerce.number().gte(-180).lte(180),
     accuracy: z.number().nonnegative().nullable().optional(),
     timestamp: z.string().min(1),
   })
@@ -184,7 +193,7 @@ export const personalFieldsSchema = z.object({
   phone: z
     .string()
     .trim()
-    .refine(isPhilippineMobile, 'Enter a valid Philippine mobile number'),
+    .refine(isPhilippineMobile, 'Enter an 11-digit mobile number, for example 09171234567'),
   email: z
     .string()
     .trim()
@@ -207,8 +216,35 @@ export const reportFieldsSchema = z.object({
     .max(5000, 'Description is too long'),
 })
 
+export const REPORT_PHOTO_MAX_COUNT = 5
+export const REPORT_PHOTO_MAX_TOTAL_BYTES = 10 * 1024 * 1024
+export const REPORT_PHOTO_MAX_FILE_BYTES = 4 * 1024 * 1024
+export const REPORT_PHOTO_CONTENT_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const
+export type ReportPhotoContentType = (typeof REPORT_PHOTO_CONTENT_TYPES)[number]
+
+export function isReportPhotoContentType(value: string): value is ReportPhotoContentType {
+  return (REPORT_PHOTO_CONTENT_TYPES as readonly string[]).includes(value)
+}
+
+export const reportPhotoSchema = z.object({
+  key: z.string().trim().min(8).max(240),
+  content_type: z.enum(REPORT_PHOTO_CONTENT_TYPES),
+  byte_size: z.number().int().positive().max(REPORT_PHOTO_MAX_FILE_BYTES),
+})
+
+export const reportPhotosSchema = z
+  .array(reportPhotoSchema)
+  .max(REPORT_PHOTO_MAX_COUNT, 'You can attach up to 5 photos')
+  .superRefine((photos, ctx) => {
+    const total = photos.reduce((sum, photo) => sum + photo.byte_size, 0)
+    if (total > REPORT_PHOTO_MAX_TOTAL_BYTES) {
+      ctx.addIssue({ code: 'custom', message: 'Photos must be 10 MB or less in total' })
+    }
+  })
+
 export const createReportSchema = personalFieldsSchema.extend(reportFieldsSchema.shape).extend({
   location: locationSchema,
+  photos: reportPhotosSchema.optional().default([]),
   website: z.string().optional(),
   tp_hp: z.string().optional(),
   captcha_token: z.string().max(2048).optional(),

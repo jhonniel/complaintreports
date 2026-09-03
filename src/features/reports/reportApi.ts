@@ -9,6 +9,14 @@ export function submitReport(payload: unknown) {
   return api.post<CreateReportResponse>('/reports', payload)
 }
 
+export function uploadReportPhoto(blob: Blob) {
+  return api.postBlob<{ key: string; content_type: string; byte_size: number }>(
+    '/uploads',
+    blob,
+    blob.type || 'image/jpeg',
+  )
+}
+
 export async function trackReport(ticketNumber: string) {
   const params = new URLSearchParams({ ticket: ticketNumber })
   try {

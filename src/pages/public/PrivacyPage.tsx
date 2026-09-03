@@ -20,6 +20,16 @@ export function PrivacyPage() {
           email when the field is left blank.
         </p>
         <p>
+          If you allow location in the browser, we save those coordinates on the ticket so
+          authorized staff can pin the report on the city map. If you decline, we may still place
+          the pin from the address you entered. The public track page never shows a map pin or
+          coordinates.
+        </p>
+        <p>
+          If you attach photos, they are compressed and stored so authorized staff can review the
+          report. The public track page never shows those photos.
+        </p>
+        <p>
           Ticket tracking shows status and category only. This policy will be expanded before
           production launch.
         </p>

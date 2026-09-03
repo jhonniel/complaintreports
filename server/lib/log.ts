@@ -1,5 +1,5 @@
 const SENSITIVE_KEY =
-  /phone|email|full_name|first_name|last_name|fullname|address|birth_date|password|authorization|access_token|refresh_token|service_role|apikey|api_key|user_agent|session_id|latitude|longitude/i
+  /phone|email|full_name|first_name|last_name|fullname|address|birth_date|password|authorization|access_token|refresh_token|service_role|apikey|api_key|secret|spaces_key|user_agent|session_id|latitude|longitude/i
 
 function toPlain(error: unknown): unknown {
   if (error instanceof Error) {

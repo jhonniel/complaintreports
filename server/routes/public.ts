@@ -1,6 +1,8 @@
-import { Router, type Request } from 'express'
+import { Router, type NextFunction, type Request, type Response } from 'express'
+import express from 'express'
 import { createAccessLogSchema, normalizeAccessPage } from '../../shared/map.ts'
 import {
+  REPORT_PHOTO_MAX_FILE_BYTES,
   createReportSchema,
   isTicketNumber,
   normalizeTicketNumber,
@@ -14,6 +16,12 @@ import { captchaAccepted } from '../lib/captcha.ts'
 import { geocodeKidapawanAddress } from '../lib/geocode.ts'
 import { logError } from '../lib/log.ts'
 import { sendTicketEmailIfRequested } from '../lib/mail.ts'
+import {
+  detectImageContentType,
+  isManagedPhotoKey,
+  isSpacesConfigured,
+  uploadReportPhoto,
+} from '../lib/spaces.ts'
 import { asyncHandler } from '../middleware/asyncHandler.ts'
 import { publicReadLimiter, publicWriteLimiter } from '../middleware/rateLimit.ts'
 import { validateBody } from '../middleware/validate.ts'
@@ -44,6 +52,52 @@ publicRouter.get(
   }),
 )
 
+const photoRawParser = express.raw({
+  type: ['image/jpeg', 'image/png', 'image/webp', 'application/octet-stream'],
+  limit: REPORT_PHOTO_MAX_FILE_BYTES,
+})
+
+function photoBodyParser(req: Request, res: Response, next: NextFunction) {
+  if (Buffer.isBuffer(req.body) && req.body.byteLength > 0) {
+    next()
+    return
+  }
+  photoRawParser(req, res, next)
+}
+
+publicRouter.post(
+  '/uploads',
+  publicWriteLimiter,
+  photoBodyParser,
+  asyncHandler(async (req, res) => {
+    if (!isSpacesConfigured) {
+      sendError(res, 503, 'Photo uploads are temporarily unavailable.')
+      return
+    }
+    const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0)
+    if (body.byteLength < 32) {
+      sendError(res, 400, 'Choose a photo to upload.')
+      return
+    }
+    if (body.byteLength > REPORT_PHOTO_MAX_FILE_BYTES) {
+      sendError(res, 400, 'Each photo must be 4 MB or less after compression.')
+      return
+    }
+    const detected = detectImageContentType(body)
+    if (!detected) {
+      sendError(res, 400, 'Use a JPEG, PNG, or WebP photo.')
+      return
+    }
+    try {
+      const uploaded = await uploadReportPhoto(body, detected)
+      res.status(201).json(uploaded)
+    } catch (error) {
+      logError('public.uploads', error)
+      sendError(res, 500, 'Unable to upload that photo. Please try again.')
+    }
+  }),
+)
+
 publicRouter.post(
   '/reports',
   publicWriteLimiter,
@@ -61,6 +115,11 @@ publicRouter.post(
     let payload = req.body as CreateReportInput
     if (!captchaAccepted(payload.captcha_token)) {
       sendError(res, 400, 'Unable to submit your report.')
+      return
+    }
+    const photos = payload.photos ?? []
+    if (photos.some((photo) => !isManagedPhotoKey(photo.key))) {
+      sendError(res, 400, 'One of the photos could not be attached. Please upload them again.')
       return
     }
     if (!payload.location) {

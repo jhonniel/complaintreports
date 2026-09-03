@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express'
-import { env, hasServiceRole, isProduction, isSupabaseConfigured } from '../config/env.ts'
+import { env, hasServiceRole, isProduction, isSpacesConfigured, isSupabaseConfigured } from '../config/env.ts'
 import { ProductionStorageError } from '../lib/errors.ts'
 import { getReportStore } from '../store/index.ts'
 
@@ -9,6 +9,7 @@ export function healthHandler(_req: Request, res: Response) {
     phase: 12,
     supabase: isSupabaseConfigured ? 'configured' : 'not_configured',
     serviceRole: hasServiceRole ? 'configured' : 'not_configured',
+    spaces: isSpacesConfigured ? 'configured' : 'not_configured',
     timestamp: new Date().toISOString(),
     environment: env.nodeEnv,
   }

@@ -1,5 +1,5 @@
 import { isAdminRole, type AdminRole } from '../../shared/auth.ts'
-import type { AdminNoteItem, AdminReportDetail, AdminStatusHistoryItem } from '../../shared/adminReport.ts'
+import type { AdminNoteItem, AdminReportDetail, AdminReportPhoto, AdminStatusHistoryItem } from '../../shared/adminReport.ts'
 import { isGender, isReportPriority, isReportStatus, combinePersonName, normalizePhilippineMobile, type ReportPriority, type ReportStatus } from '../../shared/report.ts'
 import { normalizeAccessPage } from '../../shared/map.ts'
 import { buildAnalytics, reporterFingerprint } from '../lib/analytics.ts'
@@ -7,6 +7,7 @@ import {
   DepartmentNotFoundError,
   filterAdminReports,
   locationFrom,
+  asCoordinate,
   paginateAdminReports,
   ReportNotFoundError,
   StaffNotFoundError,
@@ -14,6 +15,7 @@ import {
 } from '../lib/adminReports.ts'
 import { aggregateAccessLogs, mapFilterAsListQuery } from '../lib/mapAccess.ts'
 import { getSupabaseAdminClient } from '../lib/supabase.ts'
+import { photoViewUrl } from '../lib/spaces.ts'
 import {
   CatalogItemNotFoundError,
   DuplicateCatalogNameError,
@@ -107,8 +109,8 @@ export function createSupabaseStore(): ReportStore | null {
       category_name: asName(row.report_categories) ?? 'Other',
       status: asStatus(row.status),
       priority: asPriority(row.priority),
-      latitude: typeof row.latitude === 'number' ? row.latitude : null,
-      longitude: typeof row.longitude === 'number' ? row.longitude : null,
+      latitude: asCoordinate(row.latitude),
+      longitude: asCoordinate(row.longitude),
       assigned_department_id: typeof row.assigned_department_id === 'string' ? row.assigned_department_id : null,
       assigned_department_name: asName(row.departments),
       assigned_admin_id: assignedAdminId,
@@ -163,6 +165,33 @@ export function createSupabaseStore(): ReportStore | null {
     }))
   }
 
+  async function loadPhotos(reportId: string): Promise<AdminReportPhoto[]> {
+    const { data, error } = await db
+      .from('report_attachments')
+      .select('id, storage_key, content_type, byte_size, sort_order')
+      .eq('report_id', reportId)
+      .order('sort_order', { ascending: true })
+
+    if (error) {
+      logError('store', error)
+      return []
+    }
+
+    const photos: AdminReportPhoto[] = []
+    for (const row of data ?? []) {
+      const key = typeof row.storage_key === 'string' ? row.storage_key : ''
+      const url = await photoViewUrl(key)
+      if (!url) continue
+      photos.push({
+        id: row.id as string,
+        url,
+        content_type: typeof row.content_type === 'string' ? row.content_type : 'image/jpeg',
+        byte_size: Number(row.byte_size) || 0,
+      })
+    }
+    return photos
+  }
+
   async function loadDetail(ticketNumber: string): Promise<AdminReportDetail> {
     const { data, error } = await db
       .from('reports')
@@ -180,7 +209,11 @@ export function createSupabaseStore(): ReportStore | null {
 
     const names = await profileNames(typeof data.assigned_admin_id === 'string' ? [data.assigned_admin_id] : [])
     const record = toRecord(data as Record<string, unknown>, names)
-    const [history, notes] = await Promise.all([loadHistory(record.id), loadNotes(record.id)])
+    const [history, notes, photos] = await Promise.all([
+      loadHistory(record.id),
+      loadNotes(record.id),
+      loadPhotos(record.id),
+    ])
 
     return {
       id: record.id,
@@ -202,7 +235,7 @@ export function createSupabaseStore(): ReportStore | null {
       location: locationFrom({
         latitude: record.latitude,
         longitude: record.longitude,
-        location_accuracy: typeof data.location_accuracy === 'number' ? data.location_accuracy : null,
+        location_accuracy: asCoordinate(data.location_accuracy),
         location_captured_at: typeof data.location_captured_at === 'string' ? data.location_captured_at : null,
       }),
       assigned_department_id: record.assigned_department_id,
@@ -213,6 +246,7 @@ export function createSupabaseStore(): ReportStore | null {
       updated_at: record.updated_at,
       history,
       notes,
+      photos,
     }
   }
 
@@ -253,16 +287,9 @@ export function createSupabaseStore(): ReportStore | null {
         throw new CategoryNotFoundError()
       }
 
-      const { data: ticketNumber, error: ticketError } = await db.rpc('next_ticket_number')
-      if (ticketError || typeof ticketNumber !== 'string') {
-        logError('store', ticketError)
-        throw new Error('STORAGE_UNAVAILABLE')
-      }
-
       const now = new Date().toISOString()
       const location = input.location ?? null
       const insertPayload = {
-        ticket_number: ticketNumber,
         full_name: combinePersonName(input.first_name, input.last_name),
         birth_date: input.birth_date,
         gender: input.gender,
@@ -282,14 +309,30 @@ export function createSupabaseStore(): ReportStore | null {
         updated_at: now,
       }
 
-      const { data: report, error: insertError } = await db
-        .from('reports')
-        .insert(insertPayload)
-        .select('id, ticket_number, created_at')
-        .single()
+      let report: { id: string; ticket_number: string; created_at: string } | null = null
+      for (let attempt = 0; attempt < 8; attempt++) {
+        const { data: ticketNumber, error: ticketError } = await db.rpc('next_ticket_number')
+        if (ticketError || typeof ticketNumber !== 'string') {
+          logError('store', ticketError)
+          throw new Error('STORAGE_UNAVAILABLE')
+        }
 
-      if (insertError || !report) {
+        const { data, error: insertError } = await db
+          .from('reports')
+          .insert({ ...insertPayload, ticket_number: ticketNumber })
+          .select('id, ticket_number, created_at')
+          .single()
+
+        if (!insertError && data) {
+          report = data as { id: string; ticket_number: string; created_at: string }
+          break
+        }
+        if (insertError?.code === '23505') continue
         logError('store', insertError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+
+      if (!report) {
         throw new Error('STORAGE_UNAVAILABLE')
       }
 
@@ -304,6 +347,23 @@ export function createSupabaseStore(): ReportStore | null {
 
       if (historyError) {
         logError('store', historyError)
+      }
+
+      const photos = input.photos ?? []
+      if (photos.length > 0) {
+        const { error: photoError } = await db.from('report_attachments').insert(
+          photos.map((photo, index) => ({
+            report_id: report.id,
+            storage_key: photo.key,
+            content_type: photo.content_type,
+            byte_size: photo.byte_size,
+            sort_order: index,
+            created_at: now,
+          })),
+        )
+        if (photoError) {
+          logError('store', photoError)
+        }
       }
 
       const created: CreatedReport = {
@@ -356,8 +416,8 @@ export function createSupabaseStore(): ReportStore | null {
           departmentName: asName(row.departments),
           reporterKey: reporterFingerprint(phone),
           createdAt: row.created_at as string,
-          latitude: typeof row.latitude === 'number' ? row.latitude : null,
-          longitude: typeof row.longitude === 'number' ? row.longitude : null,
+          latitude: asCoordinate(row.latitude),
+          longitude: asCoordinate(row.longitude),
           gender: typeof row.gender === 'string' ? row.gender : null,
           birthDate: typeof row.birth_date === 'string' ? row.birth_date : null,
         }

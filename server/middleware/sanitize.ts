@@ -18,6 +18,10 @@ function sanitizeValue(value: unknown): unknown {
 }
 
 export function sanitizeBody(req: Request, _res: Response, next: NextFunction) {
+  if (Buffer.isBuffer(req.body)) {
+    next()
+    return
+  }
   if (req.body && typeof req.body === 'object') {
     req.body = sanitizeValue(req.body)
   }

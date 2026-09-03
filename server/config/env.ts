@@ -50,11 +50,22 @@ export const env = {
   tomtomApiKey: required('TOMTOM_API_KEY') ?? required('VITE_TOMTOM_API_KEY'),
   resendApiKey: required('RESEND_API_KEY'),
   resendFrom: required('RESEND_FROM') ?? 'Tingog Page <report@tingogkidapawan.com>',
+  spacesKey: required('DIGITALOCEAN_SPACES_KEY'),
+  spacesSecret: required('DIGITALOCEAN_SPACES_SECRET'),
+  spacesEndpoint: (required('DIGITALOCEAN_SPACES_ENDPOINT') ?? '').replace(/\/+$/, ''),
+  spacesRegion: required('DIGITALOCEAN_SPACES_REGION') ?? 'sgp1',
+  spacesBucket: required('DIGITALOCEAN_SPACES_BUCKET'),
+  spacesPublicBase: (required('DIGITALOCEAN_SPACES_PATH') ?? '').replace(/\/+$/, ''),
+  spacesRootPath: (required('DIGITALOCEAN_SPACES_ROOT_PATH') ?? 'tingog/reports').replace(/^\/+|\/+$/g, ''),
+  spacesExpirationMinutes: Math.max(5, Number(process.env.DIGITALOCEAN_SPACES_EXPIRATION ?? 30) || 30),
   isVercel: process.env.VERCEL === '1',
 }
 
 export const isProduction = env.nodeEnv === 'production'
 export const isSupabaseConfigured = Boolean(env.supabaseUrl && env.supabaseAnonKey)
+export const isSpacesConfigured = Boolean(
+  env.spacesKey && env.spacesSecret && env.spacesEndpoint && env.spacesBucket,
+)
 export const hasServiceRole = Boolean(env.supabaseServiceRoleKey)
 export const isDevAdminEnabled = Boolean(
   !isProduction && !env.isVercel && env.devAdminEmail && env.devAdminPassword,

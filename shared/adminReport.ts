@@ -97,6 +97,13 @@ export interface AdminNoteItem {
   created_at: string
 }
 
+export interface AdminReportPhoto {
+  id: string
+  url: string
+  content_type: string
+  byte_size: number
+}
+
 export interface AdminReportDetail {
   id: string
   ticket_number: string
@@ -120,6 +127,7 @@ export interface AdminReportDetail {
     accuracy: number | null
     captured_at: string | null
   } | null
+  photos: AdminReportPhoto[]
   assigned_department_id: string | null
   assigned_department_name: string | null
   assigned_admin_id: string | null

@@ -125,6 +125,15 @@ export function paginateAdminReports(
   return { items, page, page_size: query.page_size, total, total_pages: total === 0 ? 0 : total_pages }
 }
 
+export function asCoordinate(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value)
+    if (Number.isFinite(parsed)) return parsed
+  }
+  return null
+}
+
 export function locationFrom(record: {
   latitude: number | null
   longitude: number | null

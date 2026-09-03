@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import type { AdminReportDetail, DepartmentOption, StaffOption } from '@shared/adminReport'
 import { GENDER_LABELS, STATUS_LABELS, normalizeTicketNumber } from '@shared/report'
@@ -8,8 +8,13 @@ import { Skeleton, SkeletonText } from '@/components/ui/Skeleton'
 import { ReportActionModals, type ReportAction } from '@/features/admin/ReportActionModals'
 import { PriorityBadge, StatusBadge } from '@/features/admin/ReportBadges'
 import { fetchAdminReport, fetchDepartments, fetchStaff } from '@/features/admin/reportApi'
+import { isTomTomConfigured } from '@/lib/tomtom'
 import { ApiError } from '@/services/api'
 import { formatDateTime, formatIsoDate, formatShortDate } from '@/utils/format'
+
+const AdminMapCanvas = lazy(() =>
+  import('@/features/admin/AdminMapCanvas').then((module) => ({ default: module.AdminMapCanvas })),
+)
 
 export function AdminReportDetailPage() {
   const { ticketNumber: rawTicket = '' } = useParams()
@@ -138,15 +143,21 @@ export function AdminReportDetailPage() {
         </Card>
       </div>
 
-      <Card id="location">
+      <Card id="location" className="overflow-hidden">
         <CardHeader>
           <CardTitle>Location</CardTitle>
         </CardHeader>
         <CardBody className="space-y-3 text-sm">
           {report.location ? (
             <>
-              <Detail label="Latitude" value={report.location.latitude.toFixed(6)} />
-              <Detail label="Longitude" value={report.location.longitude.toFixed(6)} />
+              <p className="text-ink-600">
+                This pin is the latitude and longitude saved with the ticket, so staff can find the
+                report on the city map.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Detail label="Latitude" value={report.location.latitude.toFixed(6)} />
+                <Detail label="Longitude" value={report.location.longitude.toFixed(6)} />
+              </div>
               {report.location.accuracy != null ? (
                 <Detail label="Accuracy" value={`${Math.round(report.location.accuracy)} m`} />
               ) : null}
@@ -157,7 +168,7 @@ export function AdminReportDetailPage() {
                 className="inline-block font-semibold text-pine-800 hover:underline"
                 to={`/admin/map?ticket=${encodeURIComponent(report.ticket_number)}`}
               >
-                View on map
+                Open full map
               </Link>
             </>
           ) : (
@@ -165,6 +176,56 @@ export function AdminReportDetailPage() {
               No GPS was captured. If the address can be mapped, a pin still appears on the admin
               map.
             </p>
+          )}
+        </CardBody>
+        {report.location && isTomTomConfigured ? (
+          <Suspense fallback={<Skeleton className="h-72 w-full rounded-none" />}>
+            <AdminMapCanvas
+              compact
+              layer="reports"
+              reports={[
+                {
+                  ticket_number: report.ticket_number,
+                  category_name: report.category_name,
+                  status: report.status,
+                  priority: report.priority,
+                  created_at: report.created_at,
+                  latitude: report.location.latitude,
+                  longitude: report.location.longitude,
+                },
+              ]}
+              clusters={[]}
+              focusTicket={report.ticket_number}
+            />
+          </Suspense>
+        ) : report.location && !isTomTomConfigured ? (
+          <p className="border-t border-ink-100 px-5 py-3 text-sm text-ink-500">
+            Add a TomTom API key to show this pin on the map.
+          </p>
+        ) : null}
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Photos</CardTitle>
+        </CardHeader>
+        <CardBody>
+          {report.photos.length > 0 ? (
+            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {report.photos.map((photo, index) => (
+                <li key={photo.id}>
+                  <a href={photo.url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-ink-200">
+                    <img
+                      src={photo.url}
+                      alt={`Report photo ${index + 1}`}
+                      className="h-36 w-full object-cover"
+                    />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-ink-500">No photos were attached to this report.</p>
           )}
         </CardBody>
       </Card>

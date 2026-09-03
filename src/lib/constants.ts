@@ -4,6 +4,7 @@ export const TICKET_PREFIX = 'TP'
 export const CURRENT_PHASE = 12
 export const CURRENT_PHASE_LABEL = 'Production'
 export const LAST_TICKET_KEY = 'tingog_last_ticket'
+export const LOCATION_PROMPT_KEY = 'tingog_location_prompt'
 
 export const PUBLIC_NAV = [
   { to: '/', label: 'Home' },

@@ -9,6 +9,12 @@ function parseRawJson(raw: string) {
 }
 
 export function parseJsonBody(req: Request, res: Response, next: NextFunction) {
+  const contentType = req.headers['content-type'] ?? ''
+  if (contentType.startsWith('image/') || contentType === 'application/octet-stream') {
+    next()
+    return
+  }
+
   try {
     const existing = req.body as unknown
     if (Buffer.isBuffer(existing)) {

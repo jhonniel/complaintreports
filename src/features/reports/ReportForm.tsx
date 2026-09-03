@@ -1,15 +1,20 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Mail, MapPin, Phone } from 'lucide-react'
 import {
+  combinePersonName,
   createReportSchema,
   fieldErrors,
   GENDER_LABELS,
   GENDERS,
+  limitPhoneDigits,
   personalFieldsSchema,
+  REPORT_PHOTO_MAX_COUNT,
   reportFieldsSchema,
   type Gender,
   type PublicCategory,
 } from '@shared/report'
+import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody } from '@/components/ui/Card'
 import { Field } from '@/components/ui/Field'
@@ -17,10 +22,23 @@ import { FormStepper } from '@/components/ui/FormStepper'
 import { Input } from '@/components/ui/Input'
 import { Select } from '@/components/ui/Select'
 import { Textarea } from '@/components/ui/Textarea'
-import { fetchCategories, submitReport } from '@/features/reports/reportApi'
+import { fetchCategories, submitReport, uploadReportPhoto } from '@/features/reports/reportApi'
+import { formatPhotoLimitHint, ReportPhotosField } from '@/features/reports/ReportPhotosField'
+import type { DraftPhoto } from '@/features/reports/reportPhotos'
 import { LAST_TICKET_KEY } from '@/lib/constants'
+import { canAddPhotos, compressReportPhoto, photosWithinTotalLimit } from '@/lib/compressImage'
+import { cn } from '@/lib/cn'
 import { ApiError } from '@/services/api'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { formatIsoDate } from '@/utils/format'
+import {
+  clearStoredLocationPrompt,
+  queryGeolocationPermission,
+  readStoredLocationPrompt,
+  requestReportLocation,
+  writeStoredLocationPrompt,
+  type ReportLocation,
+} from '@/lib/geolocation'
 
 const STEPS = ['Your details', 'Your report', 'Review']
 const PERSONAL_KEYS = new Set([
@@ -36,7 +54,7 @@ const PERSONAL_KEYS = new Set([
 function stepForErrors(errors: Record<string, string>) {
   const keys = Object.keys(errors)
   if (keys.some((key) => PERSONAL_KEYS.has(key))) return 1
-  if (keys.some((key) => key === 'category_id' || key === 'title' || key === 'description')) return 2
+  if (keys.some((key) => key === 'category_id' || key === 'title' || key === 'description' || key === 'photos' || key.startsWith('photos.'))) return 2
   return 3
 }
 
@@ -78,9 +96,37 @@ export function ReportForm() {
   const [categoryError, setCategoryError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [photos, setPhotos] = useState<DraftPhoto[]>([])
+  const [photoError, setPhotoError] = useState<string | null>(null)
+  const [compressingPhotos, setCompressingPhotos] = useState(false)
+  const [location, setLocation] = useState<ReportLocation | null>(() => {
+    const stored = readStoredLocationPrompt()
+    return stored?.decision === 'captured' ? stored.location : null
+  })
+  const locationRequest = useRef<Promise<ReportLocation | null> | null>(null)
+  const locationRef = useRef(location)
+  locationRef.current = location
+  const photosRef = useRef(photos)
+  photosRef.current = photos
 
   useEffect(() => {
     void loadCategories()
+  }, [])
+
+  useEffect(() => {
+    const stored = readStoredLocationPrompt()
+    if (stored?.decision === 'captured') return
+
+    let cancelled = false
+    void (async () => {
+      const permission = await queryGeolocationPermission()
+      if (cancelled) return
+      if (permission === 'granted') void captureLocation()
+    })()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   async function loadCategories() {
@@ -110,6 +156,12 @@ export function ReportForm() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [step])
 
+  useEffect(() => {
+    return () => {
+      for (const photo of photosRef.current) URL.revokeObjectURL(photo.previewUrl)
+    }
+  }, [])
+
   function update<K extends keyof FormValues>(key: K, value: FormValues[K]) {
     setValues((current) => ({ ...current, [key]: value }))
     setErrors((current) => {
@@ -118,6 +170,69 @@ export function ReportForm() {
       delete next[key]
       return next
     })
+  }
+
+  function removePhoto(id: string) {
+    setPhotos((current) => {
+      const next = current.filter((photo) => photo.id !== id)
+      const removed = current.find((photo) => photo.id === id)
+      if (removed) URL.revokeObjectURL(removed.previewUrl)
+      return next
+    })
+    setPhotoError(null)
+  }
+
+  async function addPhotos(files: FileList | null) {
+    if (!files?.length) return
+    if (!canAddPhotos(photos.length, files.length)) {
+      setPhotoError(`You can attach up to ${REPORT_PHOTO_MAX_COUNT} photos.`)
+      return
+    }
+    setPhotoError(null)
+    setCompressingPhotos(true)
+    const added: DraftPhoto[] = []
+    try {
+      for (const file of Array.from(files)) {
+        const blob = await compressReportPhoto(file)
+        added.push({
+          id: crypto.randomUUID(),
+          previewUrl: URL.createObjectURL(blob),
+          blob,
+          byteSize: blob.size,
+        })
+      }
+      const combined = [...photos, ...added]
+      if (!photosWithinTotalLimit(combined.map((photo) => photo.byteSize))) {
+        for (const photo of added) URL.revokeObjectURL(photo.previewUrl)
+        setPhotoError('Photos must be 10 MB or less in total.')
+        return
+      }
+      setPhotos(combined)
+    } catch (error) {
+      for (const photo of added) URL.revokeObjectURL(photo.previewUrl)
+      setPhotoError(error instanceof Error ? error.message : 'Could not add that photo.')
+    } finally {
+      setCompressingPhotos(false)
+    }
+  }
+
+  async function captureLocation() {
+    if (locationRef.current) return locationRef.current
+    if (locationRequest.current) return locationRequest.current
+
+    const pending = requestReportLocation().then((result) => {
+      if (result.ok) {
+        locationRef.current = result.location
+        setLocation(result.location)
+        writeStoredLocationPrompt({ decision: 'captured', location: result.location })
+        return result.location
+      }
+      return null
+    })
+    locationRequest.current = pending
+    const captured = await pending
+    if (locationRequest.current === pending) locationRequest.current = null
+    return captured
   }
 
   function validateStep(nextStep: number) {
@@ -136,24 +251,31 @@ export function ReportForm() {
 
   async function handleSubmit() {
     setFormError(null)
-    const payload = {
-      ...values,
-      gender: values.gender as Gender,
-      email: values.email.trim() ? values.email.trim() : undefined,
-      location: null,
-    }
-    const parsed = createReportSchema.safeParse(payload)
-    if (!parsed.success) {
-      const nextErrors = fieldErrors(parsed.error)
-      setErrors(nextErrors)
-      setStep(stepForErrors(nextErrors))
-      setFormError('Please check the information you submitted.')
-      return
-    }
-
     setSubmitting(true)
     try {
+      const captured = location ?? (await captureLocation())
+      const uploadedPhotos = []
+      for (const photo of photos) {
+        uploadedPhotos.push(await uploadReportPhoto(photo.blob))
+      }
+      const payload = {
+        ...values,
+        gender: values.gender as Gender,
+        email: values.email.trim() ? values.email.trim() : undefined,
+        location: captured,
+        photos: uploadedPhotos,
+      }
+      const parsed = createReportSchema.safeParse(payload)
+      if (!parsed.success) {
+        const nextErrors = fieldErrors(parsed.error)
+        setErrors(nextErrors)
+        setStep(stepForErrors(nextErrors))
+        setFormError('Please check the information you submitted.')
+        return
+      }
+
       const created = await submitReport(parsed.data)
+      clearStoredLocationPrompt()
       sessionStorage.setItem(
         LAST_TICKET_KEY,
         JSON.stringify({
@@ -195,7 +317,9 @@ export function ReportForm() {
             onSubmit={(event) => {
               event.preventDefault()
               if (step < 3) {
-                if (validateStep(step + 1)) setStep((current) => current + 1)
+                if (!validateStep(step + 1)) return
+                void captureLocation()
+                setStep((current) => current + 1)
                 return
               }
               void handleSubmit()
@@ -265,15 +389,16 @@ export function ReportForm() {
                     id="phone"
                     label="Phone number"
                     required
-                    hint="Philippine mobile, for example 0917 123 4567"
+                    hint="11 digits only, for example 09171234567"
                     error={errors.phone}
                   >
                     <Input
                       type="tel"
-                      inputMode="tel"
+                      inputMode="numeric"
                       autoComplete="tel"
+                      maxLength={11}
                       value={values.phone}
-                      onChange={(event) => update('phone', event.target.value)}
+                      onChange={(event) => update('phone', limitPhoneDigits(event.target.value))}
                     />
                   </Field>
                   <Field
@@ -340,29 +465,39 @@ export function ReportForm() {
                     rows={7}
                   />
                 </Field>
+                <Field
+                  id="photos"
+                  label="Photos"
+                  required={false}
+                  hint={formatPhotoLimitHint()}
+                  error={photoError ?? errors.photos}
+                >
+                  <div>
+                    <ReportPhotosField
+                      photos={photos}
+                      busy={compressingPhotos}
+                      onAdd={(files) => void addPhotos(files)}
+                      onRemove={removePhoto}
+                    />
+                  </div>
+                </Field>
               </div>
             ) : null}
 
             {step === 3 ? (
-              <div className="space-y-4">
-                <ReviewGroup title="Personal information">
-                  <ReviewItem label="First name" value={values.first_name} />
-                  <ReviewItem label="Last name" value={values.last_name} />
-                  <ReviewItem label="Birth date" value={values.birth_date} />
-                  <ReviewItem
-                    label="Gender"
-                    value={values.gender ? GENDER_LABELS[values.gender as Gender] : '—'}
-                  />
-                  <ReviewItem label="Address" value={values.address} />
-                  <ReviewItem label="Phone" value={values.phone} />
-                  <ReviewItem label="Email" value={values.email || 'Not provided'} />
-                </ReviewGroup>
-                <ReviewGroup title="Report">
-                  <ReviewItem label="Category" value={categoryName} />
-                  <ReviewItem label="Report / complaint" value={values.title} />
-                  <ReviewItem label="Description" value={values.description} />
-                </ReviewGroup>
-              </div>
+              <ReviewSummary
+                values={values}
+                categoryName={categoryName}
+                photos={photos}
+                onEditDetails={() => {
+                  setFormError(null)
+                  setStep(1)
+                }}
+                onEditReport={() => {
+                  setFormError(null)
+                  setStep(2)
+                }}
+              />
             ) : null}
             </div>
 
@@ -385,6 +520,7 @@ export function ReportForm() {
                 loading={submitting}
                 disabled={
                   submitting ||
+                  compressingPhotos ||
                   (step >= 2 && loadingCategories) ||
                   (step === 3 && (categories.length === 0 || Boolean(categoryError)))
                 }
@@ -398,20 +534,121 @@ export function ReportForm() {
   )
 }
 
-function ReviewGroup({ title, children }: { title: string; children: ReactNode }) {
+function ReviewSummary({
+  values,
+  categoryName,
+  photos,
+  onEditDetails,
+  onEditReport,
+}: {
+  values: FormValues
+  categoryName: string
+  photos: DraftPhoto[]
+  onEditDetails: () => void
+  onEditReport: () => void
+}) {
+  const fullName = combinePersonName(values.first_name, values.last_name) || 'Resident'
+  const gender = values.gender ? GENDER_LABELS[values.gender as Gender] : '—'
+
   return (
-    <section className="rounded-lg border border-ink-100 bg-ink-50/80 p-4">
-      <h2 className="font-display text-lg font-semibold">{title}</h2>
-      <dl className="mt-3 grid gap-3">{children}</dl>
-    </section>
+    <div className="space-y-4">
+      <p className="text-sm text-ink-600">
+        Confirm this once. You can change any section before you send the report.
+      </p>
+
+      <section className="overflow-hidden rounded-xl border border-ink-200 bg-white shadow-sm">
+        <header className="flex flex-col gap-4 border-b border-ink-100 bg-gradient-to-br from-pine-50/80 to-white px-5 py-5 sm:flex-row sm:items-start sm:justify-between md:px-6">
+          <div className="min-w-0">
+            <p className="text-[0.7rem] font-semibold tracking-[0.16em] text-pine-700 uppercase">Reporter</p>
+            <h2 className="mt-1 font-display text-2xl font-semibold text-pretty text-ink-950">{fullName}</h2>
+            <p className="mt-2 flex items-start gap-2 text-sm leading-relaxed text-ink-700">
+              <MapPin className="mt-0.5 size-4 shrink-0 text-pine-700" aria-hidden="true" />
+              <span>{values.address}</span>
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-end">
+            <Badge variant="pine" className="normal-case tracking-normal">
+              {categoryName}
+            </Badge>
+            <button
+              type="button"
+              className="text-sm font-semibold text-pine-800 hover:underline"
+              onClick={onEditDetails}
+            >
+              Change details
+            </button>
+          </div>
+        </header>
+
+        <dl className="grid sm:grid-cols-2">
+          <ReviewFact
+            icon={Phone}
+            label="Phone"
+            value={values.phone}
+            className="border-b border-ink-100 sm:border-r"
+          />
+          <ReviewFact
+            icon={Mail}
+            label="Email"
+            value={values.email.trim() ? values.email : 'Not provided'}
+            className="border-b border-ink-100"
+          />
+          <ReviewFact
+            label="Birth date"
+            value={formatIsoDate(values.birth_date)}
+            className="border-b border-ink-100 sm:border-r sm:border-b-0"
+          />
+          <ReviewFact label="Gender" value={gender} />
+        </dl>
+
+        <div className="border-t border-ink-100 px-5 py-5 md:px-6">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-[0.7rem] font-semibold tracking-[0.16em] text-pine-700 uppercase">Your report</p>
+            <button
+              type="button"
+              className="text-sm font-semibold text-pine-800 hover:underline"
+              onClick={onEditReport}
+            >
+              Change report
+            </button>
+          </div>
+          <h3 className="mt-3 font-display text-xl font-semibold text-pretty text-ink-950">{values.title}</h3>
+          <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-ink-700">{values.description}</p>
+          {photos.length > 0 ? (
+            <ul className="mt-5 grid grid-cols-3 gap-2">
+              {photos.map((photo, index) => (
+                <li key={photo.id} className="overflow-hidden rounded-md border border-ink-200">
+                  <img src={photo.previewUrl} alt={`Photo ${index + 1}`} className="h-24 w-full object-cover" />
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      </section>
+    </div>
   )
 }
 
-function ReviewItem({ label, value }: { label: string; value: string }) {
+function ReviewFact({
+  icon: Icon,
+  label,
+  value,
+  className,
+}: {
+  icon?: typeof Phone
+  label: string
+  value: string
+  className?: string
+}) {
   return (
-    <div>
-      <dt className="text-xs font-semibold tracking-wide text-ink-500 uppercase">{label}</dt>
-      <dd className="mt-1 whitespace-pre-wrap text-sm text-ink-800">{value}</dd>
+    <div className={cn('px-5 py-4 md:px-6', className)}>
+      <div className={cn('flex gap-3', Icon ? 'items-start' : 'flex-col')}>
+        {Icon ? <Icon className="mt-0.5 size-4 shrink-0 text-pine-700" aria-hidden="true" /> : null}
+        <div className="min-w-0">
+          <dt className="text-xs text-ink-500">{label}</dt>
+          <dd className="mt-0.5 text-sm font-medium break-words text-ink-900">{value}</dd>
+        </div>
+      </div>
     </div>
   )
 }

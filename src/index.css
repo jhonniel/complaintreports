@@ -266,6 +266,11 @@
   height: min(75vh, 40rem);
 }
 
+.admin-map-canvas--compact {
+  min-height: 16rem;
+  height: 18rem;
+}
+
 .admin-map-canvas .maplibregl-map,
 .admin-map-canvas .maplibregl-canvas-container,
 .admin-map-canvas .maplibregl-canvas {

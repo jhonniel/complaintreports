@@ -91,8 +91,9 @@ export function AdminMapPage() {
       <div>
         <h1 className="font-display text-3xl font-semibold">Map</h1>
         <p className="mt-1 text-sm text-ink-500">
-          Report pins are placed from the address on the ticket. Names and contact details are never
-          shown. Access locations are grouped so individual visitors cannot be identified.
+          Report pins come from the location a resident shares, or from the address on the ticket
+          if location was not allowed. Names and contact details are never shown. Access locations
+          are grouped so individual visitors cannot be identified.
         </p>
       </div>
 
@@ -229,7 +230,7 @@ export function AdminMapPage() {
             <p className="px-4 py-3 text-xs text-ink-400">
               {layer === 'reports'
                 ? reports.length === 0
-                  ? 'No report pins in this filter. Tickets without a mappable Kidapawan address stay off the map.'
+                  ? 'No report pins in this filter. Tickets need a saved latitude and longitude to appear.'
                   : `${reports.length} report location${reports.length === 1 ? '' : 's'} in this filter.`
                 : clusters.length === 0
                   ? 'No approximate access areas in this range.'

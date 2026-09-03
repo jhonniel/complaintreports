@@ -57,6 +57,12 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, data?: unknown) =>
     request<T>(path, { method: 'POST', body: data ? JSON.stringify(data) : undefined }),
+  postBlob: <T>(path: string, blob: Blob, contentType: string) =>
+    request<T>(path, {
+      method: 'POST',
+      headers: { 'Content-Type': contentType },
+      body: blob,
+    }),
   patch: <T>(path: string, data?: unknown) =>
     request<T>(path, { method: 'PATCH', body: data ? JSON.stringify(data) : undefined }),
 }

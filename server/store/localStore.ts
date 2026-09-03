@@ -4,6 +4,7 @@ import type {
   AdminActorRef,
   AdminNoteItem,
   AdminReportDetail,
+  AdminReportPhoto,
   AdminStatusHistoryItem,
 } from '../../shared/adminReport.ts'
 import { isAdminRole } from '../../shared/auth.ts'
@@ -20,11 +21,13 @@ import {
   isReportStatus,
   combinePersonName,
   normalizePhilippineMobile,
+  randomTicketSerial,
   type ReportPriority,
   type ReportStatus,
 } from '../../shared/report.ts'
 import { buildAnalytics, reporterFingerprint } from '../lib/analytics.ts'
 import { geocodeKidapawanAddress } from '../lib/geocode.ts'
+import { photoViewUrl } from '../lib/spaces.ts'
 import {
   DepartmentNotFoundError,
   filterAdminReports,
@@ -120,6 +123,16 @@ interface LocalAccessLog {
   created_at: string
 }
 
+interface LocalAttachment {
+  id: string
+  report_id: string
+  storage_key: string
+  content_type: string
+  byte_size: number
+  sort_order: number
+  created_at: string
+}
+
 interface LocalDatabase {
   ticketCounters: Record<string, number>
   categories: LocalCategory[]
@@ -129,6 +142,7 @@ interface LocalDatabase {
   statusHistory: LocalStatusHistory[]
   notes: LocalNote[]
   accessLogs: LocalAccessLog[]
+  attachments: LocalAttachment[]
 }
 
 const dataDir = path.join(process.cwd(), 'server', 'data')
@@ -168,6 +182,7 @@ function emptyDatabase(): LocalDatabase {
     statusHistory: [],
     notes: [],
     accessLogs: seedAccessLogs(),
+    attachments: [],
   }
 }
 
@@ -245,6 +260,7 @@ async function readDatabase(): Promise<LocalDatabase> {
       statusHistory: parsed.statusHistory ?? [],
       notes: parsed.notes ?? [],
       accessLogs: parsed.accessLogs?.length ? parsed.accessLogs : seedAccessLogs(),
+      attachments: parsed.attachments ?? [],
     }
   } catch {
     await mkdir(dataDir, { recursive: true })
@@ -358,7 +374,25 @@ function noteItems(database: LocalDatabase, reportId: string): AdminNoteItem[] {
     }))
 }
 
-function toDetail(database: LocalDatabase, report: LocalReport): AdminReportDetail {
+async function photoItems(database: LocalDatabase, reportId: string): Promise<AdminReportPhoto[]> {
+  const rows = database.attachments
+    .filter((entry) => entry.report_id === reportId)
+    .sort((a, b) => a.sort_order - b.sort_order)
+  const photos: AdminReportPhoto[] = []
+  for (const row of rows) {
+    const url = await photoViewUrl(row.storage_key)
+    if (!url) continue
+    photos.push({
+      id: row.id,
+      url,
+      content_type: row.content_type,
+      byte_size: row.byte_size,
+    })
+  }
+  return photos
+}
+
+async function toDetail(database: LocalDatabase, report: LocalReport): Promise<AdminReportDetail> {
   const record = toRecord(database, report)
   return {
     id: record.id,
@@ -386,6 +420,7 @@ function toDetail(database: LocalDatabase, report: LocalReport): AdminReportDeta
     updated_at: record.updated_at,
     history: historyItems(database, report.id),
     notes: noteItems(database, report.id),
+    photos: await photoItems(database, report.id),
   }
 }
 
@@ -740,12 +775,21 @@ export const localStore: ReportStore = {
       }
 
       const year = currentManilaYear()
-      const nextValue = (database.ticketCounters[String(year)] ?? 0) + 1
-      database.ticketCounters[String(year)] = nextValue
+      const usedTickets = new Set(database.reports.map((entry) => entry.ticket_number))
+      let ticketNumber = ''
+      for (let attempt = 0; attempt < 40; attempt++) {
+        const candidate = formatTicketNumber(year, randomTicketSerial())
+        if (!usedTickets.has(candidate)) {
+          ticketNumber = candidate
+          break
+        }
+      }
+      if (!ticketNumber) {
+        throw new Error('Unable to allocate a ticket number')
+      }
 
       const now = new Date().toISOString()
       const id = crypto.randomUUID()
-      const ticketNumber = formatTicketNumber(year, nextValue)
       const email = input.email?.trim() ? input.email.trim() : null
       const location = input.location ?? null
 
@@ -785,6 +829,17 @@ export const localStore: ReportStore = {
         changed_by_name: 'Resident',
         created_at: now,
       })
+      for (const [index, photo] of (input.photos ?? []).entries()) {
+        database.attachments.push({
+          id: crypto.randomUUID(),
+          report_id: id,
+          storage_key: photo.key,
+          content_type: photo.content_type,
+          byte_size: photo.byte_size,
+          sort_order: index,
+          created_at: now,
+        })
+      }
 
       await writeDatabase(database)
 

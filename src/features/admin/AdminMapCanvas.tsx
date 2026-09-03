@@ -1,6 +1,6 @@
 import '@/lib/maplibreWorker'
 import { useEffect, useRef } from 'react'
-import { NavigationControl, Popup } from 'maplibre-gl'
+import { NavigationControl, Popup, LngLatBounds } from 'maplibre-gl'
 import { TomTomConfig } from '@tomtom-org/maps-sdk/core'
 import { CustomGeoJSONModule, TomTomMap } from '@tomtom-org/maps-sdk/map'
 import type { MapAccessCluster, MapReportPoint } from '@shared/map'
@@ -16,6 +16,7 @@ interface AdminMapCanvasProps {
   reports: MapReportPoint[]
   clusters: MapAccessCluster[]
   focusTicket?: string | null
+  compact?: boolean
 }
 
 function escapeHtml(value: string) {
@@ -56,7 +57,7 @@ function waitForSize(node: HTMLElement, isCancelled: () => boolean) {
   })
 }
 
-export function AdminMapCanvas({ layer, reports, clusters, focusTicket }: AdminMapCanvasProps) {
+export function AdminMapCanvas({ layer, reports, clusters, focusTicket, compact = false }: AdminMapCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<TomTomMap | null>(null)
   const reportsModuleRef = useRef<CustomGeoJSONModule | null>(null)
@@ -231,15 +232,8 @@ export function AdminMapCanvas({ layer, reports, clusters, focusTicket }: AdminM
       await accessModule.show(toAccessCollection(current.clusters), 'access')
       reportsModule.setVisible(current.layer === 'reports')
       accessModule.setVisible(current.layer === 'access')
-      if (current.layer === 'reports' && current.focusTicket) {
-        const focused = current.reports.find((item) => item.ticket_number === current.focusTicket)
-        if (focused) {
-          activeMap.mapLibreMap.flyTo({ center: [focused.longitude, focused.latitude], zoom: 15 })
-          activePopup
-            .setLngLat([focused.longitude, focused.latitude])
-            .setHTML(reportPopup(focused))
-            .addTo(activeMap.mapLibreMap)
-        }
+      if (current.layer === 'reports') {
+        focusReports(activeMap, current.reports, current.focusTicket, activePopup)
       }
     }
 
@@ -272,19 +266,40 @@ export function AdminMapCanvas({ layer, reports, clusters, focusTicket }: AdminM
     reportsModule.setVisible(layer === 'reports')
     accessModule.setVisible(layer === 'access')
     popupRef.current?.remove()
-    if (layer === 'reports' && focusTicket) {
-      const focused = reports.find((item) => item.ticket_number === focusTicket)
-      if (focused && popupRef.current) {
-        map.mapLibreMap.flyTo({ center: [focused.longitude, focused.latitude], zoom: 15 })
-        popupRef.current
-          .setLngLat([focused.longitude, focused.latitude])
-          .setHTML(reportPopup(focused))
-          .addTo(map.mapLibreMap)
-      }
+    if (layer === 'reports' && popupRef.current) {
+      focusReports(map, reports, focusTicket, popupRef.current)
     }
   }, [layer, reports, clusters, focusTicket])
 
-  return <div ref={containerRef} className="admin-map-canvas" />
+  return <div ref={containerRef} className={compact ? 'admin-map-canvas admin-map-canvas--compact' : 'admin-map-canvas'} />
+}
+
+function focusReports(
+  map: TomTomMap,
+  reports: MapReportPoint[],
+  focusTicket: string | null | undefined,
+  popup: Popup,
+) {
+  const focused = focusTicket ? reports.find((item) => item.ticket_number === focusTicket) : null
+  if (focused) {
+    map.mapLibreMap.flyTo({ center: [focused.longitude, focused.latitude], zoom: 16 })
+    popup.setLngLat([focused.longitude, focused.latitude]).setHTML(reportPopup(focused)).addTo(map.mapLibreMap)
+    return
+  }
+  if (reports.length === 1) {
+    map.mapLibreMap.jumpTo({ center: [reports[0].longitude, reports[0].latitude], zoom: 16 })
+    return
+  }
+  if (reports.length > 1) {
+    const bounds = new LngLatBounds(
+      [reports[0].longitude, reports[0].latitude],
+      [reports[0].longitude, reports[0].latitude],
+    )
+    for (const report of reports) {
+      bounds.extend([report.longitude, report.latitude])
+    }
+    map.mapLibreMap.fitBounds(bounds, { padding: 56, maxZoom: 16, duration: 0 })
+  }
 }
 
 function toReportCollection(reports: MapReportPoint[]) {
