@@ -1,6 +1,17 @@
 import { isAdminRole, type AdminRole } from '../../shared/auth.ts'
 import type { AdminNoteItem, AdminReportDetail, AdminReportPhoto, AdminStatusHistoryItem } from '../../shared/adminReport.ts'
-import { isGender, isReportPriority, isReportStatus, combinePersonName, normalizePhilippineMobile, type ReportPriority, type ReportStatus } from '../../shared/report.ts'
+import {
+  isGender,
+  isReportPriority,
+  isReportStatus,
+  combinePersonName,
+  currentManilaYear,
+  formatTicketNumber,
+  normalizePhilippineMobile,
+  randomTicketSerial,
+  type ReportPriority,
+  type ReportStatus,
+} from '../../shared/report.ts'
 import { normalizeAccessPage } from '../../shared/map.ts'
 import { buildAnalytics, reporterFingerprint } from '../lib/analytics.ts'
 import {
@@ -27,6 +38,15 @@ import { hasDuplicateCatalogName } from '../../shared/catalog.ts'
 import { logError } from '../lib/log.ts'
 import { CategoryNotFoundError } from './localStore.ts'
 import type { CreatedReport, ReportStore } from './types.ts'
+import {
+  asCreateReportInput,
+  DuplicateFacebookIntakeError,
+  FacebookIntakeNotConvertibleError,
+  FacebookIntakeNotFoundError,
+  normalizeFacebookImport,
+  toFacebookIntakeItem,
+} from '../lib/facebookIntake.ts'
+import { isFacebookIntakeStatus } from '../../shared/facebookIntake.ts'
 
 function asName(value: unknown): string | null {
   const relation = value as { name?: string } | { name?: string }[] | null
@@ -310,13 +330,9 @@ export function createSupabaseStore(): ReportStore | null {
       }
 
       let report: { id: string; ticket_number: string; created_at: string } | null = null
+      const year = currentManilaYear()
       for (let attempt = 0; attempt < 8; attempt++) {
-        const { data: ticketNumber, error: ticketError } = await db.rpc('next_ticket_number')
-        if (ticketError || typeof ticketNumber !== 'string') {
-          logError('store', ticketError)
-          throw new Error('STORAGE_UNAVAILABLE')
-        }
-
+        const ticketNumber = formatTicketNumber(year, randomTicketSerial())
         const { data, error: insertError } = await db
           .from('reports')
           .insert({ ...insertPayload, ticket_number: ticketNumber })
@@ -847,6 +863,126 @@ export function createSupabaseStore(): ReportStore | null {
         })),
         query,
       )
+    },
+
+    async listFacebookIntakes(status) {
+      let request = db
+        .from('facebook_intakes')
+        .select(
+          'id, facebook_post_id, facebook_comment_id, permalink, author_name, message, posted_at, kind, status, ticket_number, imported_by_name, created_at',
+        )
+        .order('created_at', { ascending: false })
+      if (status && isFacebookIntakeStatus(status)) request = request.eq('status', status)
+      const { data, error } = await request
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      return (data ?? []).map((row) => toFacebookIntakeItem(row))
+    },
+
+    async createFacebookIntake(input, actor) {
+      const payload = normalizeFacebookImport(input)
+      const { data, error } = await db
+        .from('facebook_intakes')
+        .insert({
+          facebook_post_id: payload.facebook_post_id,
+          facebook_comment_id: payload.facebook_comment_id,
+          permalink: payload.permalink,
+          author_name: payload.author_name,
+          message: payload.message,
+          posted_at: payload.posted_at,
+          kind: payload.kind,
+          status: 'new',
+          imported_by: actor.userId,
+          imported_by_name: actor.fullName,
+        })
+        .select(
+          'id, facebook_post_id, facebook_comment_id, permalink, author_name, message, posted_at, kind, status, ticket_number, imported_by_name, created_at',
+        )
+        .single()
+      if (isUniqueViolation(error)) throw new DuplicateFacebookIntakeError()
+      if (error || !data) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      return toFacebookIntakeItem(data)
+    },
+
+    async convertFacebookIntake(id, input, actor) {
+      const { data: existing, error: existingError } = await db
+        .from('facebook_intakes')
+        .select(
+          'id, facebook_post_id, facebook_comment_id, permalink, author_name, message, posted_at, kind, status, ticket_number, imported_by_name, created_at',
+        )
+        .eq('id', id)
+        .maybeSingle()
+      if (existingError) {
+        logError('store', existingError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (!existing) throw new FacebookIntakeNotFoundError()
+      if (existing.status !== 'new') throw new FacebookIntakeNotConvertibleError()
+
+      const created = await this.createReport(asCreateReportInput(input))
+      const now = new Date().toISOString()
+      const { error: noteError } = await db.from('report_notes').insert({
+        report_id: created.id,
+        admin_id: actor.userId,
+        note: `Facebook ${existing.kind}: ${existing.permalink}`,
+        created_at: now,
+      })
+      if (noteError) logError('store', noteError)
+
+      const { data, error } = await db
+        .from('facebook_intakes')
+        .update({
+          status: 'converted',
+          report_id: created.id,
+          ticket_number: created.ticket_number,
+        })
+        .eq('id', id)
+        .eq('status', 'new')
+        .select(
+          'id, facebook_post_id, facebook_comment_id, permalink, author_name, message, posted_at, kind, status, ticket_number, imported_by_name, created_at',
+        )
+        .maybeSingle()
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (!data) throw new FacebookIntakeNotConvertibleError()
+      return toFacebookIntakeItem(data)
+    },
+
+    async dismissFacebookIntake(id, _actor) {
+      const { data: existing, error: existingError } = await db
+        .from('facebook_intakes')
+        .select('id, status')
+        .eq('id', id)
+        .maybeSingle()
+      if (existingError) {
+        logError('store', existingError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (!existing) throw new FacebookIntakeNotFoundError()
+      if (existing.status !== 'new') throw new FacebookIntakeNotConvertibleError()
+
+      const { data, error } = await db
+        .from('facebook_intakes')
+        .update({ status: 'dismissed' })
+        .eq('id', id)
+        .eq('status', 'new')
+        .select(
+          'id, facebook_post_id, facebook_comment_id, permalink, author_name, message, posted_at, kind, status, ticket_number, imported_by_name, created_at',
+        )
+        .maybeSingle()
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (!data) throw new FacebookIntakeNotConvertibleError()
+      return toFacebookIntakeItem(data)
     },
   }
 }

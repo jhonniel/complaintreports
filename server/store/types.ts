@@ -21,6 +21,12 @@ import type {
   MapFilterQuery,
   MapReportPoint,
 } from '../../shared/map.ts'
+import type {
+  FacebookConvertInput,
+  FacebookImportInput,
+  FacebookIntakeItem,
+  FacebookIntakeStatus,
+} from '../../shared/facebookIntake.ts'
 import type { CreateReportInput, PublicCategory, PublicTrackView } from '../../shared/report.ts'
 
 export interface CreatedReport {
@@ -70,4 +76,12 @@ export interface ReportStore {
   createAccessLog(input: StoredAccessLogInput): Promise<void>
   listMapReports(query: MapFilterQuery): Promise<MapReportPoint[]>
   listMapAccess(query: AccessMapQuery): Promise<MapAccessCluster[]>
+  listFacebookIntakes(status?: FacebookIntakeStatus): Promise<FacebookIntakeItem[]>
+  createFacebookIntake(input: FacebookImportInput, actor: AdminActorRef): Promise<FacebookIntakeItem>
+  convertFacebookIntake(
+    id: string,
+    input: FacebookConvertInput,
+    actor: AdminActorRef,
+  ): Promise<FacebookIntakeItem>
+  dismissFacebookIntake(id: string, actor: AdminActorRef): Promise<FacebookIntakeItem>
 }

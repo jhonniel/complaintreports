@@ -17,6 +17,7 @@ import { AdminAnalyticsPage } from '@/pages/admin/AdminAnalyticsPage'
 import { AdminCategoriesPage } from '@/pages/admin/AdminCategoriesPage'
 import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage'
 import { AdminDepartmentsPage } from '@/pages/admin/AdminDepartmentsPage'
+import { AdminFacebookPage } from '@/pages/admin/AdminFacebookPage'
 import { AdminLoginPage } from '@/pages/admin/AdminLoginPage'
 import { AdminMapPage } from '@/pages/admin/AdminMapPage'
 import { AdminReportDetailPage } from '@/pages/admin/AdminReportDetailPage'
@@ -61,6 +62,7 @@ export function AppRoutes() {
           <Route path="/admin/reports" element={<AdminReportsPage />} />
           <Route path="/admin/reports/:ticketNumber" element={<AdminReportDetailPage />} />
           <Route path="/admin/map" element={<AdminMapPage />} />
+          <Route path="/admin/facebook" element={<AdminFacebookPage />} />
           <Route path="/admin/analytics" element={<AdminAnalyticsPage />} />
           <Route path="/admin/categories" element={<AdminCategoriesPage />} />
           <Route path="/admin/departments" element={<AdminDepartmentsPage />} />

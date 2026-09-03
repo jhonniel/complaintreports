@@ -13,6 +13,7 @@ import type { CatalogCreateInput, CatalogItem, CatalogUpdateInput } from '../../
 import { hasDuplicateCatalogName } from '../../shared/catalog.ts'
 import { DEFAULT_DEPARTMENTS } from '../../shared/departments.ts'
 import { normalizeAccessPage } from '../../shared/map.ts'
+import type { FacebookIntakeStatus } from '../../shared/facebookIntake.ts'
 import {
   currentManilaYear,
   formatTicketNumber,
@@ -22,6 +23,7 @@ import {
   combinePersonName,
   normalizePhilippineMobile,
   randomTicketSerial,
+  type CreateReportInput,
   type ReportPriority,
   type ReportStatus,
 } from '../../shared/report.ts'
@@ -42,6 +44,15 @@ import {
   DuplicateCatalogNameError,
   LastActiveCategoryError,
 } from '../lib/catalog.ts'
+import {
+  asCreateReportInput,
+  DuplicateFacebookIntakeError,
+  FacebookIntakeNotConvertibleError,
+  FacebookIntakeNotFoundError,
+  normalizeFacebookImport,
+  sameFacebookTarget,
+  toFacebookIntakeItem,
+} from '../lib/facebookIntake.ts'
 import { aggregateAccessLogs, mapFilterAsListQuery } from '../lib/mapAccess.ts'
 import type { CreatedReport, ReportStore } from './types.ts'
 
@@ -133,6 +144,23 @@ interface LocalAttachment {
   created_at: string
 }
 
+interface LocalFacebookIntake {
+  id: string
+  facebook_post_id: string
+  facebook_comment_id: string | null
+  permalink: string
+  author_name: string
+  message: string
+  posted_at: string | null
+  kind: 'post' | 'comment'
+  status: FacebookIntakeStatus
+  report_id: string | null
+  ticket_number: string | null
+  imported_by: string
+  imported_by_name: string
+  created_at: string
+}
+
 interface LocalDatabase {
   ticketCounters: Record<string, number>
   categories: LocalCategory[]
@@ -143,6 +171,7 @@ interface LocalDatabase {
   notes: LocalNote[]
   accessLogs: LocalAccessLog[]
   attachments: LocalAttachment[]
+  facebookIntakes: LocalFacebookIntake[]
 }
 
 const dataDir = path.join(process.cwd(), 'server', 'data')
@@ -183,6 +212,7 @@ function emptyDatabase(): LocalDatabase {
     notes: [],
     accessLogs: seedAccessLogs(),
     attachments: [],
+    facebookIntakes: [],
   }
 }
 
@@ -261,6 +291,7 @@ async function readDatabase(): Promise<LocalDatabase> {
       notes: parsed.notes ?? [],
       accessLogs: parsed.accessLogs?.length ? parsed.accessLogs : seedAccessLogs(),
       attachments: parsed.attachments ?? [],
+      facebookIntakes: parsed.facebookIntakes ?? [],
     }
   } catch {
     await mkdir(dataDir, { recursive: true })
@@ -466,6 +497,92 @@ function applyCatalogUpdate<T extends { name: string; description: string | null
   if (input.name !== undefined) entry.name = input.name
   if (input.description !== undefined) entry.description = input.description
   if (input.is_active !== undefined) entry.is_active = input.is_active
+}
+
+function insertLocalReport(
+  database: LocalDatabase,
+  input: CreateReportInput,
+  historyNote = 'Report submitted by a resident.',
+): CreatedReport {
+  const category = database.categories.find((entry) => entry.id === input.category_id && entry.is_active)
+  if (!category) {
+    throw new CategoryNotFoundError()
+  }
+
+  const year = currentManilaYear()
+  const usedTickets = new Set(database.reports.map((entry) => entry.ticket_number))
+  let ticketNumber = ''
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const candidate = formatTicketNumber(year, randomTicketSerial())
+    if (!usedTickets.has(candidate)) {
+      ticketNumber = candidate
+      break
+    }
+  }
+  if (!ticketNumber) {
+    throw new Error('Unable to allocate a ticket number')
+  }
+
+  const now = new Date().toISOString()
+  const id = crypto.randomUUID()
+  const email = input.email?.trim() ? input.email.trim() : null
+  const location = input.location ?? null
+
+  const report: LocalReport = {
+    id,
+    ticket_number: ticketNumber,
+    full_name: combinePersonName(input.first_name, input.last_name),
+    birth_date: input.birth_date,
+    gender: input.gender,
+    address: input.address.trim(),
+    phone: normalizePhilippineMobile(input.phone),
+    email,
+    category_id: category.id,
+    title: input.title.trim(),
+    description: input.description.trim(),
+    status: 'submitted',
+    priority: 'medium',
+    latitude: location?.latitude ?? null,
+    longitude: location?.longitude ?? null,
+    location_accuracy: location?.accuracy ?? null,
+    location_captured_at: location?.timestamp ?? null,
+    assigned_department_id: null,
+    assigned_admin_id: null,
+    assigned_admin_name: null,
+    created_at: now,
+    updated_at: now,
+  }
+
+  database.reports.push(report)
+  database.statusHistory.push({
+    id: crypto.randomUUID(),
+    report_id: id,
+    previous_status: null,
+    new_status: 'submitted',
+    note: historyNote,
+    changed_by: null,
+    changed_by_name: 'Resident',
+    created_at: now,
+  })
+  for (const [index, photo] of (input.photos ?? []).entries()) {
+    database.attachments.push({
+      id: crypto.randomUUID(),
+      report_id: id,
+      storage_key: photo.key,
+      content_type: photo.content_type,
+      byte_size: photo.byte_size,
+      sort_order: index,
+      created_at: now,
+    })
+  }
+
+  return {
+    id,
+    ticket_number: ticketNumber,
+    status: 'submitted',
+    created_at: now,
+    category_name: category.name,
+  }
 }
 
 function createCatalogEntry(input: CatalogCreateInput): LocalCategory {
@@ -783,90 +900,83 @@ export const localStore: ReportStore = {
   createReport(input) {
     return withLock(async () => {
       const database = await readDatabase()
-      const category = database.categories.find(
-        (entry) => entry.id === input.category_id && entry.is_active,
-      )
-      if (!category) {
-        throw new CategoryNotFoundError()
-      }
+      const created = insertLocalReport(database, input)
+      await writeDatabase(database)
+      return created
+    })
+  },
 
-      const year = currentManilaYear()
-      const usedTickets = new Set(database.reports.map((entry) => entry.ticket_number))
-      let ticketNumber = ''
-      for (let attempt = 0; attempt < 40; attempt++) {
-        const candidate = formatTicketNumber(year, randomTicketSerial())
-        if (!usedTickets.has(candidate)) {
-          ticketNumber = candidate
-          break
-        }
-      }
-      if (!ticketNumber) {
-        throw new Error('Unable to allocate a ticket number')
-      }
+  async listFacebookIntakes(status) {
+    const database = await readDatabase()
+    return database.facebookIntakes
+      .filter((entry) => !status || entry.status === status)
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .map(toFacebookIntakeItem)
+  },
 
+  createFacebookIntake(input, actor) {
+    return withLock(async () => {
+      const database = await readDatabase()
+      rememberStaff(database, actor)
+      const payload = normalizeFacebookImport(input)
+      const duplicate = database.facebookIntakes.some((entry) => sameFacebookTarget(entry, payload))
+      if (duplicate) throw new DuplicateFacebookIntakeError()
       const now = new Date().toISOString()
-      const id = crypto.randomUUID()
-      const email = input.email?.trim() ? input.email.trim() : null
-      const location = input.location ?? null
-
-      const report: LocalReport = {
-        id,
-        ticket_number: ticketNumber,
-        full_name: combinePersonName(input.first_name, input.last_name),
-        birth_date: input.birth_date,
-        gender: input.gender,
-        address: input.address.trim(),
-        phone: normalizePhilippineMobile(input.phone),
-        email,
-        category_id: category.id,
-        title: input.title.trim(),
-        description: input.description.trim(),
-        status: 'submitted',
-        priority: 'medium',
-        latitude: location?.latitude ?? null,
-        longitude: location?.longitude ?? null,
-        location_accuracy: location?.accuracy ?? null,
-        location_captured_at: location?.timestamp ?? null,
-        assigned_department_id: null,
-        assigned_admin_id: null,
-        assigned_admin_name: null,
-        created_at: now,
-        updated_at: now,
-      }
-
-      database.reports.push(report)
-      database.statusHistory.push({
+      const row: LocalFacebookIntake = {
         id: crypto.randomUUID(),
-        report_id: id,
-        previous_status: null,
-        new_status: 'submitted',
-        note: 'Report submitted by a resident.',
-        changed_by: null,
-        changed_by_name: 'Resident',
+        ...payload,
+        status: 'new',
+        report_id: null,
+        ticket_number: null,
+        imported_by: actor.userId,
+        imported_by_name: actor.fullName,
+        created_at: now,
+      }
+      database.facebookIntakes.push(row)
+      await writeDatabase(database)
+      return toFacebookIntakeItem(row)
+    })
+  },
+
+  convertFacebookIntake(id, input, actor) {
+    return withLock(async () => {
+      const database = await readDatabase()
+      rememberStaff(database, actor)
+      const intake = database.facebookIntakes.find((entry) => entry.id === id)
+      if (!intake) throw new FacebookIntakeNotFoundError()
+      if (intake.status !== 'new') throw new FacebookIntakeNotConvertibleError()
+      const created = insertLocalReport(
+        database,
+        asCreateReportInput(input),
+        `Imported from Facebook by ${actor.fullName}.`,
+      )
+      const now = new Date().toISOString()
+      database.notes.push({
+        id: crypto.randomUUID(),
+        report_id: created.id,
+        admin_id: actor.userId,
+        admin_name: actor.fullName,
+        note: `Facebook ${intake.kind}: ${intake.permalink}`,
         created_at: now,
       })
-      for (const [index, photo] of (input.photos ?? []).entries()) {
-        database.attachments.push({
-          id: crypto.randomUUID(),
-          report_id: id,
-          storage_key: photo.key,
-          content_type: photo.content_type,
-          byte_size: photo.byte_size,
-          sort_order: index,
-          created_at: now,
-        })
-      }
-
+      intake.status = 'converted'
+      intake.report_id = created.id
+      intake.ticket_number = created.ticket_number
       await writeDatabase(database)
+      return toFacebookIntakeItem(intake)
+    })
+  },
 
-      const created: CreatedReport = {
-        id,
-        ticket_number: ticketNumber,
-        status: 'submitted',
-        created_at: now,
-        category_name: category.name,
-      }
-      return created
+  dismissFacebookIntake(id, actor) {
+    return withLock(async () => {
+      const database = await readDatabase()
+      rememberStaff(database, actor)
+      const intake = database.facebookIntakes.find((entry) => entry.id === id)
+      if (!intake) throw new FacebookIntakeNotFoundError()
+      if (intake.status !== 'new') throw new FacebookIntakeNotConvertibleError()
+      intake.status = 'dismissed'
+      await writeDatabase(database)
+      return toFacebookIntakeItem(intake)
     })
   },
 }

@@ -34,11 +34,13 @@ import { getAdminActor, requireAdmin, requireRole } from '../middleware/auth.ts'
 import { adminLimiter } from '../middleware/rateLimit.ts'
 import { validateBody } from '../middleware/validate.ts'
 import { getReportStore } from '../store/index.ts'
+import { facebookAdminRouter } from './adminFacebook.ts'
 
 export const adminRouter = Router()
 
 adminRouter.use(adminLimiter)
 adminRouter.use(requireAdmin)
+adminRouter.use('/facebook', facebookAdminRouter)
 
 function queryRecord(query: Request['query']) {
   const result: Record<string, unknown> = {}

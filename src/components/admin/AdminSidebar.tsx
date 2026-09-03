@@ -7,6 +7,7 @@ import {
   LogOut,
   Map,
   Settings,
+  Share2,
   Tags,
   X,
 } from 'lucide-react'
@@ -24,6 +25,7 @@ const icons = {
   Tags,
   Building2,
   Settings,
+  Share2,
 } as const
 
 interface AdminSidebarProps {

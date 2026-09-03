@@ -58,6 +58,8 @@ export const env = {
   spacesPublicBase: (required('DIGITALOCEAN_SPACES_PATH') ?? '').replace(/\/+$/, ''),
   spacesRootPath: (required('DIGITALOCEAN_SPACES_ROOT_PATH') ?? 'tingog/reports').replace(/^\/+|\/+$/g, ''),
   spacesExpirationMinutes: Math.max(5, Number(process.env.DIGITALOCEAN_SPACES_EXPIRATION ?? 30) || 30),
+  facebookAccessToken: required('FACEBOOK_ACCESS_TOKEN'),
+  facebookPageId: required('FACEBOOK_PAGE_ID'),
   isVercel: process.env.VERCEL === '1',
 }
 

@@ -17,6 +17,7 @@ export const ADMIN_NAV = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: 'LayoutDashboard' },
   { to: '/admin/reports', label: 'Reports', icon: 'FileText' },
   { to: '/admin/map', label: 'Map', icon: 'Map' },
+  { to: '/admin/facebook', label: 'Facebook', icon: 'Share2' },
   { to: '/admin/analytics', label: 'Analytics', icon: 'ChartColumn' },
   { to: '/admin/categories', label: 'Categories', icon: 'Tags' },
   { to: '/admin/departments', label: 'Departments', icon: 'Building2' },

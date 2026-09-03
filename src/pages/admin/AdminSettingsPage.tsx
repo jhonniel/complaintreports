@@ -1,11 +1,20 @@
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card'
 import { useAuth } from '@/features/auth/AuthProvider'
+import { fetchFacebookStatus } from '@/features/admin/facebookApi'
 import { CURRENT_PHASE, CURRENT_PHASE_LABEL } from '@/lib/constants'
 import { ROLE_LABELS } from '@shared/auth'
+import { useEffect, useState } from 'react'
 
 export function AdminSettingsPage() {
   const { profile, isConfigured, signOut } = useAuth()
+  const [facebook, setFacebook] = useState<{ configured: boolean; page_configured: boolean } | null>(null)
+
+  useEffect(() => {
+    void fetchFacebookStatus()
+      .then(setFacebook)
+      .catch(() => setFacebook({ configured: false, page_configured: false }))
+  }, [])
 
   return (
     <div className="space-y-4">
@@ -46,6 +55,16 @@ export function AdminSettingsPage() {
           </p>
           <p>
             TomTom map: <strong>{import.meta.env.VITE_TOMTOM_API_KEY ? 'Configured' : 'Not configured'}</strong>
+          </p>
+          <p>
+            Facebook intake:{' '}
+            <strong>
+              {facebook?.configured
+                ? facebook.page_configured
+                  ? 'Token and Page ID set'
+                  : 'Token set'
+                : 'Not connected'}
+            </strong>
           </p>
           <p className="text-ink-500">
             Never put the service role key in frontend environment variables.

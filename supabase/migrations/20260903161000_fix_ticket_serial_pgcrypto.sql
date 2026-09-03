@@ -1,5 +1,5 @@
--- Allocate a random unique 6-digit serial so tickets cannot be guessed by counting up.
--- On Supabase, pgcrypto lives in the extensions schema.
+-- The random serial function failed on Supabase because gen_random_bytes
+-- is in the extensions schema, not public. Run this in the SQL editor.
 
 create extension if not exists pgcrypto with schema extensions;
 
