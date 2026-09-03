@@ -13,6 +13,7 @@ import { sendError } from '../lib/http.ts'
 import { captchaAccepted } from '../lib/captcha.ts'
 import { geocodeKidapawanAddress } from '../lib/geocode.ts'
 import { logError } from '../lib/log.ts'
+import { sendTicketEmailIfRequested } from '../lib/mail.ts'
 import { asyncHandler } from '../middleware/asyncHandler.ts'
 import { publicReadLimiter, publicWriteLimiter } from '../middleware/rateLimit.ts'
 import { validateBody } from '../middleware/validate.ts'
@@ -78,6 +79,10 @@ publicRouter.post(
     }
     try {
       const created = await getReportStore().createReport(payload)
+      await sendTicketEmailIfRequested({
+        email: payload.email,
+        ticketNumber: created.ticket_number,
+      })
       res.status(201).json(toCreateReportResponse(created))
     } catch (error) {
       if (error instanceof CategoryNotFoundError) {

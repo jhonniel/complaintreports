@@ -64,7 +64,8 @@ export function ReportSuccessPage() {
         Your report has been successfully submitted.
       </h1>
       <p className="mt-3 text-ink-600">
-        Please save your ticket number. You can use it to check the status of your report.
+        Please save your ticket number. You can use it to check the status of your report. If you
+        entered an email, we also sent the ticket number there.
       </p>
       <Card className="mt-8">
         <CardBody className="p-6">

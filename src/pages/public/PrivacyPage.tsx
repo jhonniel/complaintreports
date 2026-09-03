@@ -16,6 +16,10 @@ export function PrivacyPage() {
           authorized administrators can view personally identifiable information.
         </p>
         <p>
+          If you include an email, we use it only to send your ticket number. We do not send that
+          email when the field is left blank.
+        </p>
+        <p>
           Ticket tracking shows status and category only. This policy will be expanded before
           production launch.
         </p>

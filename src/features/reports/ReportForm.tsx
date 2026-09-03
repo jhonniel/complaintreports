@@ -276,7 +276,13 @@ export function ReportForm() {
                       onChange={(event) => update('phone', event.target.value)}
                     />
                   </Field>
-                  <Field id="email" label="Email address" required={false} error={errors.email}>
+                  <Field
+                    id="email"
+                    label="Email address"
+                    required={false}
+                    hint="Optional. We will send your ticket number here. Leave blank if you do not want an email."
+                    error={errors.email}
+                  >
                     <Input
                       type="email"
                       autoComplete="email"

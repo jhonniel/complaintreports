@@ -24,10 +24,23 @@ function parseOrigins() {
   return [...new Set([...configured, ...vercelOrigins])]
 }
 
+function publicSiteUrl(origins: string[]) {
+  const configured = required('PUBLIC_SITE_URL')
+  if (configured) return configured.replace(/\/$/, '')
+  const vercelProd = asHttpsOrigin(process.env.VERCEL_PROJECT_PRODUCTION_URL)
+  if (vercelProd) return vercelProd
+  const httpsOrigin = origins.find((origin) => origin.startsWith('https://'))
+  if (httpsOrigin) return httpsOrigin
+  return origins[0] ?? 'http://localhost:5173'
+}
+
+const clientOrigins = parseOrigins()
+
 export const env = {
   nodeEnv: process.env.NODE_ENV ?? 'development',
   port: Number(process.env.PORT ?? 3001),
-  clientOrigins: parseOrigins(),
+  clientOrigins,
+  publicSiteUrl: publicSiteUrl(clientOrigins),
   captchaSecret: required('CAPTCHA_SECRET_KEY'),
   supabaseUrl: required('SUPABASE_URL') ?? required('VITE_SUPABASE_URL'),
   supabaseAnonKey: required('SUPABASE_ANON_KEY') ?? required('VITE_SUPABASE_ANON_KEY'),
@@ -35,6 +48,8 @@ export const env = {
   devAdminEmail: required('DEV_ADMIN_EMAIL'),
   devAdminPassword: required('DEV_ADMIN_PASSWORD'),
   tomtomApiKey: required('TOMTOM_API_KEY') ?? required('VITE_TOMTOM_API_KEY'),
+  resendApiKey: required('RESEND_API_KEY'),
+  resendFrom: required('RESEND_FROM') ?? 'Tingog Page <report@tingogkidapawan.com>',
   isVercel: process.env.VERCEL === '1',
 }
 
