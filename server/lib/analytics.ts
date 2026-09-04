@@ -9,6 +9,7 @@ import {
 } from '../../shared/analytics.ts'
 import { roundAccessCell } from '../../shared/map.ts'
 import {
+  DEPARTMENT_PENDING_STATUSES,
   GENDER_LABELS,
   MANILA_TIME_ZONE,
   REPORT_STATUSES,
@@ -287,6 +288,16 @@ export function buildAnalytics(rows: AnalyticsSourceRow[], query: AnalyticsQuery
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count)
 
+  const pendingDepartmentMap = new Map<string, number>()
+  for (const row of filtered) {
+    if (!DEPARTMENT_PENDING_STATUSES.includes(row.status)) continue
+    const name = row.departmentName ?? 'Unassigned'
+    pendingDepartmentMap.set(name, (pendingDepartmentMap.get(name) ?? 0) + 1)
+  }
+  const pending_by_department = [...pendingDepartmentMap.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+
   const areaMap = new Map<string, { latitude: number; longitude: number; count: number }>()
   let withLocation = 0
   for (const row of filtered) {
@@ -342,6 +353,7 @@ export function buildAnalytics(rows: AnalyticsSourceRow[], query: AnalyticsQuery
     categories,
     statuses,
     departments,
+    pending_by_department,
     geography: {
       with_location: withLocation,
       without_location: filtered.length - withLocation,

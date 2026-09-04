@@ -197,6 +197,7 @@ export function CatalogManager({
                 <TH>Description</TH>
                 <TH>Status</TH>
                 <TH>In use</TH>
+                {noun === 'department' ? <TH>Pending</TH> : null}
                 <TH>Created</TH>
                 {canManage ? <TH className="text-right">Actions</TH> : null}
               </TR>
@@ -212,6 +213,13 @@ export function CatalogManager({
                     </Badge>
                   </TD>
                   <TD>{formatCount(item.usage_count)}</TD>
+                  {noun === 'department' ? (
+                    <TD>
+                      <span className={(item.pending_count ?? 0) > 0 ? 'font-semibold text-earth-700' : 'text-ink-500'}>
+                        {formatCount(item.pending_count ?? 0)}
+                      </span>
+                    </TD>
+                  ) : null}
                   <TD>{formatShortDate(item.created_at)}</TD>
                   {canManage ? (
                     <TD>

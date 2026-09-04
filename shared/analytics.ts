@@ -85,6 +85,7 @@ export interface AnalyticsResponse {
   categories: NamedCount[]
   statuses: StatusCount[]
   departments: NamedCount[]
+  pending_by_department: NamedCount[]
   geography: AnalyticsGeography
   demographics: AnalyticsDemographics
 }

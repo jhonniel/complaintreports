@@ -16,6 +16,14 @@ export function canManageCatalog(role: AdminRole) {
   return role === 'admin' || role === 'super_admin'
 }
 
+export function canAssignReports(role: AdminRole) {
+  return role === 'admin' || role === 'super_admin'
+}
+
+export function canManageStaff(role: AdminRole) {
+  return role === 'admin' || role === 'super_admin'
+}
+
 export function canDeleteReports(role: AdminRole) {
   return isAdminRole(role)
 }

@@ -10,6 +10,7 @@ export interface CatalogItem {
   is_active: boolean
   created_at: string
   usage_count: number
+  pending_count?: number
 }
 
 export interface CatalogCreateInput {

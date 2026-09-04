@@ -21,6 +21,12 @@
     { "source": "/api/(.*)", "destination": "/api?__path=/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
+  "crons": [
+    {
+      "path": "/api/cron/keepalive",
+      "schedule": "0 8 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/assets/(.*)",

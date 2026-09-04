@@ -1,15 +1,20 @@
 import type { Request, Response } from 'express'
 import { env, hasServiceRole, isProduction, isSpacesConfigured, isSupabaseConfigured } from '../config/env.ts'
 import { ProductionStorageError } from '../lib/errors.ts'
+import { pingSupabaseKeepAlive } from '../lib/supabaseKeepAlive.ts'
+import { asyncHandler } from '../middleware/asyncHandler.ts'
 import { getReportStore } from '../store/index.ts'
 
-export function healthHandler(_req: Request, res: Response) {
+export const healthHandler = asyncHandler(async (_req: Request, res: Response) => {
+  const database = await pingSupabaseKeepAlive()
   const base = {
     service: 'tingog-page',
     phase: 12,
     supabase: isSupabaseConfigured ? 'configured' : 'not_configured',
     serviceRole: hasServiceRole ? 'configured' : 'not_configured',
     spaces: isSpacesConfigured ? 'configured' : 'not_configured',
+    database: database.ok ? 'ok' : database.configured ? 'unreachable' : 'not_configured',
+    databaseMs: database.ms,
     timestamp: new Date().toISOString(),
     environment: env.nodeEnv,
   }
@@ -24,9 +29,9 @@ export function healthHandler(_req: Request, res: Response) {
   }
 
   try {
-    res.json({
+    res.status(database.ok || !database.configured ? 200 : 503).json({
       ...base,
-      status: 'ok',
+      status: database.ok || !database.configured ? 'ok' : 'degraded',
       storage: getReportStore().mode,
     })
   } catch (error) {
@@ -40,4 +45,4 @@ export function healthHandler(_req: Request, res: Response) {
     }
     throw error
   }
-}
+})

@@ -76,6 +76,7 @@ export interface ReportStore {
   createDepartment(input: CatalogCreateInput): Promise<CatalogItem>
   updateDepartment(id: string, input: CatalogUpdateInput): Promise<CatalogItem>
   listStaff(): Promise<StaffOption[]>
+  updateStaffDepartment(userId: string, departmentId: string | null): Promise<StaffOption>
   createAccessLog(input: StoredAccessLogInput): Promise<void>
   listMapReports(query: MapFilterQuery): Promise<MapReportPoint[]>
   listMapAccess(query: AccessMapQuery): Promise<MapAccessCluster[]>

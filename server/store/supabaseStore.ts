@@ -6,6 +6,7 @@ import {
   isReportStatus,
   combinePersonName,
   currentManilaYear,
+  DEPARTMENT_PENDING_STATUSES,
   formatTicketNumber,
   normalizePhilippineMobile,
   randomTicketSerial,
@@ -67,7 +68,7 @@ function asGender(value: unknown) {
   return typeof value === 'string' && isGender(value) ? value : 'prefer_not_to_say'
 }
 
-function toCatalogRow(row: Record<string, unknown>, usageCount: number): CatalogItem {
+function toCatalogRow(row: Record<string, unknown>, usageCount: number, pendingCount = 0): CatalogItem {
   return {
     id: row.id as string,
     name: row.name as string,
@@ -75,21 +76,28 @@ function toCatalogRow(row: Record<string, unknown>, usageCount: number): Catalog
     is_active: row.is_active !== false,
     created_at: row.created_at as string,
     usage_count: usageCount,
+    pending_count: pendingCount,
   }
 }
 
 async function usageCounts(db: SupabaseClient, column: 'category_id' | 'assigned_department_id') {
-  const { data, error } = await db.from('reports').select(column)
+  const { data, error } = await db.from('reports').select(`${column}, status`)
   const counts = new Map<string, number>()
+  const pending = new Map<string, number>()
   if (error) {
     logError('store', error)
-    return counts
+    return { counts, pending }
   }
   for (const row of data ?? []) {
     const id = (row as Record<string, unknown>)[column]
-    if (typeof id === 'string') counts.set(id, (counts.get(id) ?? 0) + 1)
+    if (typeof id !== 'string') continue
+    counts.set(id, (counts.get(id) ?? 0) + 1)
+    const status = (row as Record<string, unknown>).status
+    if (typeof status === 'string' && DEPARTMENT_PENDING_STATUSES.includes(status as ReportStatus)) {
+      pending.set(id, (pending.get(id) ?? 0) + 1)
+    }
   }
-  return counts
+  return { counts, pending }
 }
 
 function isUniqueViolation(error: { code?: string } | null) {
@@ -606,7 +614,7 @@ export function createSupabaseStore(): ReportStore | null {
         logError('store', error)
         throw new Error('STORAGE_UNAVAILABLE')
       }
-      return (data ?? []).map((row) => toCatalogRow(row, usage.get(row.id as string) ?? 0))
+      return (data ?? []).map((row) => toCatalogRow(row, usage.counts.get(row.id as string) ?? 0))
     },
 
     async createCategory(input) {
@@ -689,7 +697,7 @@ export function createSupabaseStore(): ReportStore | null {
         throw new Error('STORAGE_UNAVAILABLE')
       }
       const usage = await usageCounts(db, 'category_id')
-      return toCatalogRow(data, usage.get(id) ?? 0)
+      return toCatalogRow(data, usage.counts.get(id) ?? 0)
     },
 
     async listDepartments() {
@@ -701,7 +709,9 @@ export function createSupabaseStore(): ReportStore | null {
         logError('store', error)
         throw new Error('STORAGE_UNAVAILABLE')
       }
-      return (data ?? []).map((row) => toCatalogRow(row, usage.get(row.id as string) ?? 0))
+      return (data ?? []).map((row) =>
+        toCatalogRow(row, usage.counts.get(row.id as string) ?? 0, usage.pending.get(row.id as string) ?? 0),
+      )
     },
 
     async createDepartment(input) {
@@ -769,22 +779,79 @@ export function createSupabaseStore(): ReportStore | null {
         throw new Error('STORAGE_UNAVAILABLE')
       }
       const usage = await usageCounts(db, 'assigned_department_id')
-      return toCatalogRow(data, usage.get(id) ?? 0)
+      return toCatalogRow(data, usage.counts.get(id) ?? 0, usage.pending.get(id) ?? 0)
     },
 
     async listStaff() {
-      const { data, error } = await db.from('profiles').select('user_id, full_name, role').order('full_name')
+      const { data: departments } = await db.from('departments').select('id, name')
+      const names = new Map(
+        (departments ?? []).map((row) => [row.id as string, row.name as string]),
+      )
+      let query = db.from('profiles').select('user_id, full_name, role, department_id').order('full_name')
+      let { data, error } = await query
+      if (error) {
+        const fallback = await db.from('profiles').select('user_id, full_name, role').order('full_name')
+        data = fallback.data
+        error = fallback.error
+      }
       if (error) {
         logError('store', error)
         throw new Error('STORAGE_UNAVAILABLE')
       }
       return (data ?? [])
         .filter((row) => isAdminRole(typeof row.role === 'string' ? row.role : ''))
-        .map((row) => ({
-          user_id: row.user_id as string,
-          full_name: row.full_name as string,
-          role: row.role as AdminRole,
-        }))
+        .map((row) => {
+          const departmentId = typeof (row as { department_id?: unknown }).department_id === 'string'
+            ? ((row as { department_id: string }).department_id)
+            : null
+          return {
+            user_id: row.user_id as string,
+            full_name: row.full_name as string,
+            role: row.role as AdminRole,
+            department_id: departmentId,
+            department_name: departmentId ? names.get(departmentId) ?? null : null,
+          }
+        })
+    },
+
+    async updateStaffDepartment(userId, departmentId) {
+      if (departmentId) {
+        const { data: department, error: departmentError } = await db
+          .from('departments')
+          .select('id, name')
+          .eq('id', departmentId)
+          .maybeSingle()
+        if (departmentError) {
+          logError('store', departmentError)
+          throw new Error('STORAGE_UNAVAILABLE')
+        }
+        if (!department) throw new DepartmentNotFoundError()
+      }
+      const { data, error } = await db
+        .from('profiles')
+        .update({ department_id: departmentId })
+        .eq('user_id', userId)
+        .select('user_id, full_name, role, department_id')
+        .maybeSingle()
+      if (error) {
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (!data) throw new StaffNotFoundError()
+      const role = typeof data.role === 'string' ? data.role : ''
+      if (!isAdminRole(role)) throw new StaffNotFoundError()
+      let departmentName: string | null = null
+      if (departmentId) {
+        const { data: department } = await db.from('departments').select('name').eq('id', departmentId).maybeSingle()
+        departmentName = typeof department?.name === 'string' ? department.name : null
+      }
+      return {
+        user_id: data.user_id as string,
+        full_name: data.full_name as string,
+        role,
+        department_id: departmentId,
+        department_name: departmentName,
+      }
     },
 
     async createAccessLog(input) {

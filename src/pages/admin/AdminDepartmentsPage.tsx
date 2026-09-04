@@ -41,7 +41,8 @@ export function AdminDepartmentsPage() {
       <div>
         <h1 className="font-display text-3xl font-semibold">Departments</h1>
         <p className="mt-1 text-sm text-ink-500">
-          Inactive departments stay on existing tickets but cannot receive new assignments.
+          Inactive departments stay on existing tickets but cannot receive new assignments. Pending is the number of
+          tickets still open for that office.
           {canManage ? '' : ' Staff can view this list. Administrators manage the records.'}
         </p>
       </div>

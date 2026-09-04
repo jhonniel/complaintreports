@@ -12,7 +12,7 @@ import { useAuth } from '@/features/auth/AuthProvider'
 import { isTomTomConfigured } from '@/lib/tomtom'
 import { ApiError } from '@/services/api'
 import { formatDateTime, formatIsoDate, formatShortDate } from '@/utils/format'
-import { canDeleteReports } from '@shared/auth'
+import { canAssignReports, canDeleteReports } from '@shared/auth'
 
 const AdminMapCanvas = lazy(() =>
   import('@/features/admin/AdminMapCanvas').then((module) => ({ default: module.AdminMapCanvas })),
@@ -24,6 +24,7 @@ export function AdminReportDetailPage() {
   const navigate = useNavigate()
   const { profile } = useAuth()
   const canDelete = profile ? canDeleteReports(profile.role) : false
+  const canAssign = profile ? canAssignReports(profile.role) : false
   const [report, setReport] = useState<AdminReportDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -103,9 +104,11 @@ export function AdminReportDetailPage() {
           <Button size="sm" variant="outline" onClick={() => setAction('priority')}>
             Priority
           </Button>
+          {canAssign ? (
           <Button size="sm" variant="outline" onClick={() => setAction('assign')}>
             Assign
           </Button>
+          ) : null}
           <Button size="sm" onClick={() => setAction('note')}>
             Add note
           </Button>

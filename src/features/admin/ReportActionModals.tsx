@@ -215,9 +215,12 @@ export function ReportActionModals({
           <Field id="action-staff" label="Assigned staff" required={false}>
             <Select value={nextAdmin} onChange={(event) => setNextAdmin(event.target.value)}>
               <option value="">Unassigned</option>
-              {staff.map((member) => (
+              {staff
+                .filter((member) => !nextDepartment || !member.department_id || member.department_id === nextDepartment)
+                .map((member) => (
                 <option key={member.user_id} value={member.user_id}>
                   {member.full_name}
+                  {member.department_name ? ` · ${member.department_name}` : ''}
                 </option>
               ))}
             </Select>

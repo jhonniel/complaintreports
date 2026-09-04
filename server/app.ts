@@ -10,6 +10,7 @@ import { parseJsonBody } from './middleware/parseJsonBody.ts'
 import { restoreVercelApiPath } from './middleware/vercelPath.ts'
 import { adminRouter } from './routes/admin.ts'
 import { devRouter } from './routes/dev.ts'
+import { keepAliveHandler } from './routes/cron.ts'
 import { healthHandler } from './routes/health.ts'
 import { publicRouter } from './routes/public.ts'
 
@@ -41,6 +42,7 @@ app.use(parseJsonBody)
 app.use(sanitizeBody)
 
 app.get('/api/health', healthLimiter, healthHandler)
+app.get('/api/cron/keepalive', healthLimiter, keepAliveHandler)
 app.use('/api/dev', devRouter)
 app.use(requireReportStore)
 app.use('/api', publicRouter)

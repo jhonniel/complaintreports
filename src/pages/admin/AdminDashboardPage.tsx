@@ -11,15 +11,23 @@ import {
 } from '@shared/analytics'
 import { Label } from '@/components/ui/Label'
 import { Select } from '@/components/ui/Select'
+import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table'
+import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card'
 import { DashboardCharts } from '@/features/admin/DashboardCharts'
 import { StatCard } from '@/features/admin/StatCard'
 import { fetchAnalytics } from '@/features/admin/analyticsApi'
+import { fetchAdminDepartments } from '@/features/admin/catalogApi'
+import { useAuth } from '@/features/auth/AuthProvider'
 import { ApiError } from '@/services/api'
+import { formatCount } from '@/utils/format'
+import type { CatalogItem } from '@shared/catalog'
 
 export function AdminDashboardPage() {
+  const { profile } = useAuth()
   const [period, setPeriod] = useState<AnalyticsPeriod>('monthly')
   const [range, setRange] = useState<AnalyticsRange>('all')
   const [data, setData] = useState<AnalyticsResponse | null>(null)
+  const [departments, setDepartments] = useState<CatalogItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -27,9 +35,12 @@ export function AdminDashboardPage() {
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetchAnalytics(period, range)
-      .then((response) => {
-        if (!cancelled) setData(response)
+    Promise.all([fetchAnalytics(period, range), fetchAdminDepartments()])
+      .then(([response, catalog]) => {
+        if (!cancelled) {
+          setData(response)
+          setDepartments(catalog.departments)
+        }
       })
       .catch((err) => {
         if (cancelled) return
@@ -121,6 +132,50 @@ export function AdminDashboardPage() {
           loading={loading}
         />
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Pending by department</CardTitle>
+        </CardHeader>
+        <CardBody>
+          {loading ? (
+            <p className="text-sm text-ink-500">Loading department queues…</p>
+          ) : departments.length === 0 ? (
+            <p className="text-sm text-ink-500">No departments yet.</p>
+          ) : (
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Department</TH>
+                  <TH>Pending</TH>
+                  <TH>Assigned</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {departments
+                  .filter((item) => !profile?.departmentId || item.id === profile.departmentId)
+                  .sort((left, right) => (right.pending_count ?? 0) - (left.pending_count ?? 0))
+                  .map((item) => (
+                    <TR key={item.id}>
+                      <TD className="font-medium">
+                        <Link className="text-pine-800 hover:underline" to={`/admin/reports?department_id=${item.id}`}>
+                          {item.name}
+                        </Link>
+                      </TD>
+                      <TD className={(item.pending_count ?? 0) > 0 ? 'font-semibold text-earth-700' : 'text-ink-500'}>
+                        {formatCount(item.pending_count ?? 0)}
+                      </TD>
+                      <TD>{formatCount(item.usage_count)}</TD>
+                    </TR>
+                  ))}
+              </TBody>
+            </Table>
+          )}
+          <p className="mt-3 text-xs text-ink-500">
+            Pending includes submitted, received, under review, and in progress tickets assigned to that department.
+          </p>
+        </CardBody>
+      </Card>
 
       <DashboardCharts data={data} loading={loading} />
     </div>

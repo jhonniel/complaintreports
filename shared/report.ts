@@ -113,6 +113,14 @@ export function isReportStatus(value: string): value is ReportStatus {
   return (REPORT_STATUSES as readonly string[]).includes(value)
 }
 
+/** Open tickets a department still needs to action. */
+export const DEPARTMENT_PENDING_STATUSES: ReportStatus[] = [
+  'submitted',
+  'received',
+  'under_review',
+  'in_progress',
+]
+
 export const REPORT_PRIORITIES = ['low', 'medium', 'high', 'urgent'] as const
 export type ReportPriority = (typeof REPORT_PRIORITIES)[number]
 

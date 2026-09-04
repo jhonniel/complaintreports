@@ -1,6 +1,14 @@
+import type { Request } from 'express'
 import { rateLimit } from 'express-rate-limit'
+import { env } from '../config/env.ts'
 
 const tooMany = { error: 'Too many requests. Please try again later.' }
+
+function isKeepAliveRequest(req: Request) {
+  if (req.get('user-agent') === 'vercel-cron/1.0') return true
+  if (!env.cronSecret) return false
+  return (req.get('authorization') ?? '') === `Bearer ${env.cronSecret}`
+}
 
 const shared = {
   standardHeaders: 'draft-8' as const,
@@ -24,6 +32,7 @@ export const publicReadLimiter = rateLimit({
 export const healthLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 60,
+  skip: isKeepAliveRequest,
   ...shared,
 })
 

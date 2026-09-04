@@ -62,6 +62,7 @@ export const env = {
   facebookPageId: required('FACEBOOK_PAGE_ID'),
   facebookAppId: required('FACEBOOK_APP_ID'),
   facebookAppSecret: required('FACEBOOK_APP_SECRET'),
+  cronSecret: required('CRON_SECRET'),
   isVercel: process.env.VERCEL === '1',
 }
 

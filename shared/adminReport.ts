@@ -29,6 +29,7 @@ export interface AdminActorRef {
   userId: string
   fullName: string
   role: AdminRole
+  departmentId?: string | null
 }
 
 export interface DepartmentOption {
@@ -41,6 +42,8 @@ export interface StaffOption {
   user_id: string
   full_name: string
   role: AdminRole
+  department_id: string | null
+  department_name: string | null
 }
 
 export interface AdminReportListQuery {
@@ -172,10 +175,15 @@ export const addNoteSchema = z.object({
     .max(2000, 'Note is too long'),
 })
 
+export const updateStaffSchema = z.object({
+  department_id: z.string().uuid().nullable(),
+})
+
 export type UpdateStatusInput = z.infer<typeof updateStatusSchema>
 export type UpdatePriorityInput = z.infer<typeof updatePrioritySchema>
 export type AssignReportInput = z.infer<typeof assignReportSchema>
 export type AddNoteInput = z.infer<typeof addNoteSchema>
+export type UpdateStaffInput = z.infer<typeof updateStaffSchema>
 
 const DATE_DAY = /^\d{4}-\d{2}-\d{2}$/
 

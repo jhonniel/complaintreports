@@ -12,6 +12,7 @@ export interface DevAdminActor {
     id: string
     fullName: string
     role: AdminRole
+    departmentId: string | null
   }
 }
 
@@ -39,6 +40,7 @@ export function createDevSession(email: string, password: string) {
       id: '00000000-0000-0000-0000-000000000002',
       fullName: 'City Administrator',
       role: 'super_admin',
+      departmentId: null,
     },
   }
   const exp = Date.now() + TTL_MS
@@ -60,7 +62,13 @@ export function verifyDevToken(token: string): DevAdminActor | null {
     }
     if (!parsed.actor || typeof parsed.exp !== 'number' || parsed.exp < Date.now()) return null
     if (parsed.actor.profile.role !== 'super_admin') return null
-    return parsed.actor
+    return {
+      ...parsed.actor,
+      profile: {
+        ...parsed.actor.profile,
+        departmentId: parsed.actor.profile.departmentId ?? null,
+      },
+    }
   } catch {
     return null
   }

@@ -12,6 +12,7 @@ export interface AdminActor {
     id: string
     fullName: string
     role: AdminRole
+    departmentId: string | null
   }
 }
 
@@ -78,18 +79,30 @@ async function authorize(req: Request, res: Response, next: NextFunction) {
 
     const { data: profile, error: profileError } = await profileClient
       .from('profiles')
-      .select('id, full_name, role')
+      .select('id, full_name, role, department_id')
       .eq('user_id', data.user.id)
       .maybeSingle()
 
-    if (profileError) {
-      logError('auth', profileError)
+    let row = profile
+    let lookupError = profileError
+    if (lookupError) {
+      const fallback = await profileClient
+        .from('profiles')
+        .select('id, full_name, role')
+        .eq('user_id', data.user.id)
+        .maybeSingle()
+      row = fallback.data
+      lookupError = fallback.error
+    }
+
+    if (lookupError) {
+      logError('auth', lookupError)
       sendError(res, 401, 'Authentication is required.')
       return
     }
 
-    const role = typeof profile?.role === 'string' ? profile.role : ''
-    if (!profile || !isAdminRole(role)) {
+    const role = typeof row?.role === 'string' ? row.role : ''
+    if (!row || !isAdminRole(role)) {
       sendError(res, 403, 'You do not have access.')
       return
     }
@@ -98,9 +111,10 @@ async function authorize(req: Request, res: Response, next: NextFunction) {
       userId: data.user.id,
       email: data.user.email ?? null,
       profile: {
-        id: profile.id as string,
-        fullName: profile.full_name as string,
+        id: row.id as string,
+        fullName: row.full_name as string,
         role,
+        departmentId: typeof row.department_id === 'string' ? row.department_id : null,
       },
     }
     res.locals.admin = actor

@@ -62,3 +62,9 @@ export function fetchDepartments() {
 export function fetchStaff() {
   return api.get<{ staff: StaffOption[] }>('/admin/staff')
 }
+
+export function updateStaffDepartment(userId: string, departmentId: string | null) {
+  return api.patch<{ staff: StaffOption }>(`/admin/staff/${encodeURIComponent(userId)}`, {
+    department_id: departmentId,
+  })
+}

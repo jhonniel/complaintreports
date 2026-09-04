@@ -17,6 +17,7 @@ export interface AuthProfile {
   fullName: string
   role: AdminRole
   email: string | null
+  departmentId: string | null
 }
 
 type AuthStatus = 'loading' | 'authenticated' | 'anonymous'
@@ -49,6 +50,7 @@ function profileFromDev(session: DevSessionPayload): AuthProfile | null {
     fullName: session.full_name,
     role: session.role,
     email: session.email,
+    departmentId: null,
   }
 }
 
@@ -66,20 +68,35 @@ async function loadProfile(userId: string, email: string | null): Promise<AuthPr
   if (!supabase) return null
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, user_id, full_name, role')
+    .select('id, user_id, full_name, role, department_id')
     .eq('user_id', userId)
     .maybeSingle()
 
-  if (error || !data) return null
-  const role = typeof data.role === 'string' ? data.role : ''
+  let row = data
+  let lookupError = error
+  if (lookupError) {
+    const fallback = await supabase
+      .from('profiles')
+      .select('id, user_id, full_name, role')
+      .eq('user_id', userId)
+      .maybeSingle()
+    row = fallback.data
+    lookupError = fallback.error
+  }
+
+  if (lookupError || !row) return null
+  const role = typeof row.role === 'string' ? row.role : ''
   if (!isAdminRole(role)) return null
 
   return {
-    id: data.id as string,
-    userId: data.user_id as string,
-    fullName: data.full_name as string,
+    id: row.id as string,
+    userId: row.user_id as string,
+    fullName: row.full_name as string,
     role,
     email,
+    departmentId: typeof (row as { department_id?: unknown }).department_id === 'string'
+      ? (row as { department_id: string }).department_id
+      : null,
   }
 }
 

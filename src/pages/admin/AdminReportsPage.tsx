@@ -31,7 +31,7 @@ import { fetchAdminReports, fetchStaff } from '@/features/admin/reportApi'
 import { useAuth } from '@/features/auth/AuthProvider'
 import { ApiError } from '@/services/api'
 import { formatDateTime, formatShortDate } from '@/utils/format'
-import { canDeleteReports } from '@shared/auth'
+import { canAssignReports, canDeleteReports } from '@shared/auth'
 
 function queryFromParams(params: URLSearchParams): AdminReportListQuery {
   return parseAdminReportListQuery(Object.fromEntries(params.entries()))
@@ -50,6 +50,8 @@ export function AdminReportsPage() {
   const navigate = useNavigate()
   const { profile } = useAuth()
   const canDelete = profile ? canDeleteReports(profile.role) : false
+  const canAssign = profile ? canAssignReports(profile.role) : false
+  const staffDepartmentId = profile?.role === 'staff' ? profile.departmentId : null
   const query = useMemo(() => queryFromParams(searchParams), [searchParams])
   const [searchInput, setSearchInput] = useState(query.q)
   const [items, setItems] = useState<AdminReportListItem[]>([])
@@ -142,7 +144,9 @@ export function AdminReportsPage() {
       <div>
         <h1 className="font-display text-3xl font-semibold">Reports</h1>
         <p className="mt-1 text-sm text-ink-500">
-          Search tickets, titles, and categories. Personal details stay on the report page.
+          {staffDepartmentId
+            ? 'Showing tickets assigned to your department. Update status and add notes to take action.'
+            : 'Assign a ticket to a department so that office can take action. Personal details stay on the report page.'}
         </p>
       </div>
 
@@ -225,7 +229,8 @@ export function AdminReportsPage() {
             <Select
               id="filter-department"
               className="mt-1.5"
-              value={query.department_id ?? ''}
+              value={staffDepartmentId ?? query.department_id ?? ''}
+              disabled={Boolean(staffDepartmentId)}
               onChange={(event) => setSearchParams(setParam(searchParams, 'department_id', event.target.value))}
             >
               <option value="">All departments</option>
@@ -357,6 +362,7 @@ export function AdminReportsPage() {
                       >
                         Status
                       </Button>
+                      {canAssign ? (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -368,6 +374,7 @@ export function AdminReportsPage() {
                       >
                         Assign
                       </Button>
+                      ) : null}
                       <Button
                         size="sm"
                         variant="ghost"

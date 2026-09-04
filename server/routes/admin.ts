@@ -6,6 +6,7 @@ import {
   isUuid,
   parseAdminReportListQuery,
   updatePrioritySchema,
+  updateStaffSchema,
   updateStatusSchema,
 } from '../../shared/adminReport.ts'
 import {
@@ -17,6 +18,7 @@ import {
 import { parseAccessMapQuery, parseMapFilterQuery, toMapAccessCluster, toMapReportPoint } from '../../shared/map.ts'
 import { isTicketNumber, normalizeTicketNumber } from '../../shared/report.ts'
 import { parseAnalyticsQuery } from '../lib/analytics.ts'
+import { canAccessDepartmentReport, scopedStaffDepartmentId } from '../lib/departmentAccess.ts'
 import {
   DepartmentNotFoundError,
   ReportNotFoundError,
@@ -57,7 +59,41 @@ function actorFrom(res: Parameters<typeof getAdminActor>[0]) {
     userId: admin.userId,
     fullName: admin.profile.fullName,
     role: admin.profile.role,
+    departmentId: admin.profile.departmentId,
   }
+}
+
+function staffScope(res: Parameters<typeof getAdminActor>[0]) {
+  const admin = getAdminActor(res)
+  if (!admin) return null
+  return scopedStaffDepartmentId({
+    role: admin.profile.role,
+    departmentId: admin.profile.departmentId,
+  })
+}
+
+async function ensureDepartmentAccess(
+  res: Parameters<typeof sendError>[0],
+  ticketNumber: string,
+) {
+  const scoped = staffScope(res)
+  if (!scoped) return true
+  const report = await getReportStore().getAdminReport(ticketNumber)
+  if (!report) {
+    sendError(res, 404, 'Report not found.')
+    return false
+  }
+  const admin = getAdminActor(res)
+  if (
+    !canAccessDepartmentReport(
+      admin ? { role: admin.profile.role, departmentId: admin.profile.departmentId } : null,
+      report.assigned_department_id,
+    )
+  ) {
+    sendError(res, 403, 'This report is assigned to another department.')
+    return false
+  }
+  return true
 }
 
 function readTicketParam(req: Request) {
@@ -111,6 +147,7 @@ adminRouter.get('/me', (_req, res) => {
     email: admin.email,
     full_name: admin.profile.fullName,
     role: admin.profile.role,
+    department_id: admin.profile.departmentId,
   })
 })
 
@@ -119,6 +156,8 @@ adminRouter.get(
   asyncHandler(async (req, res) => {
     try {
       const query = parseAdminReportListQuery(queryRecord(req.query))
+      const scoped = staffScope(res)
+      if (scoped) query.department_id = scoped
       const result = await getReportStore().listAdminReports(query)
       res.json(result)
     } catch (error) {
@@ -138,6 +177,7 @@ adminRouter.get(
       return
     }
     try {
+      if (!(await ensureDepartmentAccess(res, ticketNumber))) return
       const report = await getReportStore().getAdminReport(ticketNumber)
       if (!report) {
         sendError(res, 404, 'Report not found.')
@@ -167,6 +207,7 @@ adminRouter.patch(
       return
     }
     try {
+      if (!(await ensureDepartmentAccess(res, ticketNumber))) return
       const report = await getReportStore().updateReportStatus(ticketNumber, req.body, actor)
       res.json(report)
     } catch (error) {
@@ -192,6 +233,7 @@ adminRouter.patch(
       return
     }
     try {
+      if (!(await ensureDepartmentAccess(res, ticketNumber))) return
       const report = await getReportStore().updateReportPriority(ticketNumber, req.body, actor)
       res.json(report)
     } catch (error) {
@@ -204,6 +246,7 @@ adminRouter.patch(
 
 adminRouter.patch(
   '/reports/:ticketNumber/assign',
+  requireRole('admin', 'super_admin'),
   validateBody(assignReportSchema),
   asyncHandler(async (req, res) => {
     const actor = actorFrom(res)
@@ -242,6 +285,7 @@ adminRouter.post(
       return
     }
     try {
+      if (!(await ensureDepartmentAccess(res, ticketNumber))) return
       const report = await getReportStore().addReportNote(ticketNumber, req.body.note, actor)
       res.json(report)
     } catch (error) {
@@ -266,6 +310,7 @@ adminRouter.delete(
       return
     }
     try {
+      if (!(await ensureDepartmentAccess(res, ticketNumber))) return
       await getReportStore().deleteReport(ticketNumber, actor)
       res.json({ ok: true })
     } catch (error) {
@@ -411,6 +456,8 @@ adminRouter.get(
           user_id: actor.userId,
           full_name: actor.fullName,
           role: actor.role,
+          department_id: actor.departmentId ?? null,
+          department_name: null,
         })
       }
       res.json({ staff })
@@ -422,11 +469,34 @@ adminRouter.get(
   }),
 )
 
+adminRouter.patch(
+  '/staff/:userId',
+  requireRole('admin', 'super_admin'),
+  validateBody(updateStaffSchema),
+  asyncHandler(async (req, res) => {
+    const userId = Array.isArray(req.params.userId) ? req.params.userId[0] ?? '' : req.params.userId ?? ''
+    if (!isUuid(userId)) {
+      sendError(res, 400, 'Choose a valid staff account.')
+      return
+    }
+    try {
+      const staff = await getReportStore().updateStaffDepartment(userId, req.body.department_id)
+      res.json({ staff })
+    } catch (error) {
+      if (sendStoreError(res, error)) return
+      logError('admin', error)
+      sendError(res, 500, 'Unable to update that staff department.')
+    }
+  }),
+)
+
 adminRouter.get(
   '/map/reports',
   asyncHandler(async (req, res) => {
     try {
       const query = parseMapFilterQuery(queryRecord(req.query))
+      const scoped = staffScope(res)
+      if (scoped) query.department_id = scoped
       const reports = await getReportStore().listMapReports(query)
       res.json({ reports: reports.map(toMapReportPoint) })
     } catch (error) {

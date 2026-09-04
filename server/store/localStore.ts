@@ -24,6 +24,7 @@ import {
   combinePersonName,
   normalizePhilippineMobile,
   randomTicketSerial,
+  DEPARTMENT_PENDING_STATUSES,
   type CreateReportInput,
   type ReportPriority,
   type ReportStatus,
@@ -78,6 +79,7 @@ interface LocalStaff {
   user_id: string
   full_name: string
   role: string
+  department_id?: string | null
 }
 
 interface LocalReport {
@@ -496,6 +498,7 @@ export class CategoryNotFoundError extends Error {
 function toCatalogItem(
   entry: { id: string; name: string; description: string | null; is_active: boolean; created_at: string },
   usageCount: number,
+  pendingCount = 0,
 ): CatalogItem {
   return {
     id: entry.id,
@@ -504,6 +507,7 @@ function toCatalogItem(
     is_active: entry.is_active,
     created_at: entry.created_at,
     usage_count: usageCount,
+    pending_count: pendingCount,
   }
 }
 
@@ -513,6 +517,13 @@ function categoryUsage(database: LocalDatabase, categoryId: string) {
 
 function departmentUsage(database: LocalDatabase, departmentId: string) {
   return database.reports.filter((report) => report.assigned_department_id === departmentId).length
+}
+
+function departmentPending(database: LocalDatabase, departmentId: string) {
+  return database.reports.filter(
+    (report) =>
+      report.assigned_department_id === departmentId && DEPARTMENT_PENDING_STATUSES.includes(report.status),
+  ).length
 }
 
 function applyCatalogUpdate<T extends { name: string; description: string | null; is_active: boolean }>(
@@ -830,7 +841,9 @@ export const localStore: ReportStore = {
   async listDepartments() {
     const database = await readDatabase()
     return database.departments
-      .map((department) => toCatalogItem(department, departmentUsage(database, department.id)))
+      .map((department) =>
+        toCatalogItem(department, departmentUsage(database, department.id), departmentPending(database, department.id)),
+      )
       .sort((a, b) => a.name.localeCompare(b.name))
   },
 
@@ -857,7 +870,7 @@ export const localStore: ReportStore = {
       }
       applyCatalogUpdate(department, input)
       await writeDatabase(database)
-      return toCatalogItem(department, departmentUsage(database, department.id))
+      return toCatalogItem(department, departmentUsage(database, department.id), departmentPending(database, department.id))
     })
   },
 
@@ -865,8 +878,40 @@ export const localStore: ReportStore = {
     const database = await readDatabase()
     return database.staff.flatMap((entry) => {
       if (!isAdminRole(entry.role)) return []
-      return [{ user_id: entry.user_id, full_name: entry.full_name, role: entry.role }]
+      const department = entry.department_id
+        ? database.departments.find((item) => item.id === entry.department_id)
+        : null
+      return [{
+        user_id: entry.user_id,
+        full_name: entry.full_name,
+        role: entry.role,
+        department_id: entry.department_id ?? null,
+        department_name: department?.name ?? null,
+      }]
     }).sort((a, b) => a.full_name.localeCompare(b.full_name))
+  },
+
+  updateStaffDepartment(userId, departmentId) {
+    return withLock(async () => {
+      const database = await readDatabase()
+      if (departmentId && !database.departments.some((entry) => entry.id === departmentId)) {
+        throw new DepartmentNotFoundError()
+      }
+      const staff = database.staff.find((entry) => entry.user_id === userId)
+      if (!staff || !isAdminRole(staff.role)) throw new StaffNotFoundError()
+      staff.department_id = departmentId
+      await writeDatabase(database)
+      const department = departmentId
+        ? database.departments.find((entry) => entry.id === departmentId)
+        : null
+      return {
+        user_id: staff.user_id,
+        full_name: staff.full_name,
+        role: staff.role,
+        department_id: departmentId,
+        department_name: department?.name ?? null,
+      }
+    })
   },
 
   createAccessLog(input) {
