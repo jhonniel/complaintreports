@@ -24,7 +24,7 @@
   "crons": [
     {
       "path": "/api/cron/keepalive",
-      "schedule": "0 8 * * *"
+      "schedule": "0 8 */4 * *"
     }
   ],
   "headers": [

@@ -1,4 +1,5 @@
 import { api } from '@/services/api'
+import { pingSupabaseKeepAlive } from '@/lib/keepAlive'
 
 const SESSION_KEY = 'tingog_session_id'
 const LOGGED_KEY = 'tingog_access_logged_v2'
@@ -47,5 +48,6 @@ export async function logPublicAccess(page: string) {
     })
   } catch {
     sessionStorage.removeItem(LOGGED_KEY)
+    pingSupabaseKeepAlive(true)
   }
 }
