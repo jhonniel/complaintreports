@@ -130,7 +130,7 @@ export function AdminMapPage() {
           </Button>
         </div>
         {filtersOpen ? (
-        <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-6 lg:gap-3">
           {layer === 'reports' ? (
             <>
               <FilterSelect
@@ -187,22 +187,22 @@ export function AdminMapPage() {
               </FilterSelect>
             </>
           ) : null}
-          <div>
+          <div className="min-w-0">
             <Label htmlFor="map-from">From</Label>
             <Input
               id="map-from"
               type="date"
-              className="mt-1.5"
+              className="mt-1.5 min-w-0"
               value={query.date_from ?? ''}
               onChange={(event) => setSearchParams(setParam(searchParams, 'date_from', event.target.value))}
             />
           </div>
-          <div>
+          <div className="min-w-0">
             <Label htmlFor="map-to">To</Label>
             <Input
               id="map-to"
               type="date"
-              className="mt-1.5"
+              className="mt-1.5 min-w-0"
               value={query.date_to ?? ''}
               onChange={(event) => setSearchParams(setParam(searchParams, 'date_to', event.target.value))}
             />
@@ -319,9 +319,9 @@ function FilterSelect({
   children: ReactNode
 }) {
   return (
-    <div>
+    <div className="min-w-0">
       <Label htmlFor={id}>{label}</Label>
-      <Select id={id} className="mt-1.5" value={value} onChange={(event) => onChange(event.target.value)}>
+      <Select id={id} className="mt-1.5 min-w-0" value={value} onChange={(event) => onChange(event.target.value)}>
         {children}
       </Select>
     </div>

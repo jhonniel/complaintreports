@@ -180,6 +180,16 @@ export const PRIORITY_RANK: Record<ReportPriority, number> = {
   urgent: 3,
 }
 
+export const STATUS_RANK: Record<ReportStatus, number> = {
+  submitted: 0,
+  received: 1,
+  under_review: 2,
+  in_progress: 3,
+  resolved: 4,
+  closed: 5,
+  rejected: 6,
+}
+
 export function isReportPriority(value: string): value is ReportPriority {
   return (REPORT_PRIORITIES as readonly string[]).includes(value)
 }

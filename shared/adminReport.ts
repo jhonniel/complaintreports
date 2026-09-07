@@ -236,8 +236,13 @@ export function parseAdminReportListQuery(input: Record<string, unknown>): Admin
   const date_to = typeof input.date_to === 'string' && DATE_DAY.test(input.date_to) ? input.date_to : null
   const sort = ADMIN_REPORT_SORTS.includes(input.sort as AdminReportSort)
     ? (input.sort as AdminReportSort)
-    : 'updated_at'
-  const order = input.order === 'asc' ? 'asc' : 'desc'
+    : 'status'
+  const order =
+    input.order === 'asc' || input.order === 'desc'
+      ? input.order
+      : sort === 'status' || sort === 'ticket_number' || sort === 'department_assigned_at'
+        ? 'asc'
+        : 'desc'
   const pageRaw = Number(input.page)
   const sizeRaw = Number(input.page_size)
   const page = Number.isInteger(pageRaw) && pageRaw > 0 ? pageRaw : 1

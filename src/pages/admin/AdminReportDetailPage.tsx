@@ -221,13 +221,17 @@ export function AdminReportDetailPage() {
         <CardBody className="space-y-3 text-sm">
           {report.location ? (
             <>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Detail label="Latitude" value={report.location.latitude.toFixed(6)} />
-                <Detail label="Longitude" value={report.location.longitude.toFixed(6)} />
+              <div className="grid grid-cols-3 gap-3">
+                <Detail className="min-w-0" label="Latitude" value={report.location.latitude.toFixed(6)} />
+                <Detail className="min-w-0" label="Longitude" value={report.location.longitude.toFixed(6)} />
+                {report.location.captured_at ? (
+                  <Detail
+                    className="min-w-0"
+                    label="Pinned at"
+                    value={formatDateTime(report.location.captured_at)}
+                  />
+                ) : null}
               </div>
-              {report.location.captured_at ? (
-                <Detail label="Pinned at" value={formatDateTime(report.location.captured_at)} />
-              ) : null}
               <Link
                 className="inline-block font-semibold text-pine-800 hover:underline"
                 to={`/admin/map?ticket=${encodeURIComponent(report.ticket_number)}`}

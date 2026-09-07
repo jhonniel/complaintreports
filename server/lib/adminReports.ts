@@ -1,4 +1,4 @@
-import { PRIORITY_RANK, manilaDateKey, normalizeTicketNumber, type ReportPriority, type ReportStatus } from '../../shared/report.ts'
+import { PRIORITY_RANK, STATUS_RANK, manilaDateKey, normalizeTicketNumber, type ReportPriority, type ReportStatus } from '../../shared/report.ts'
 import type {
   AdminReportDetail,
   AdminReportListItem,
@@ -85,9 +85,14 @@ function compareAssignedAt(a: AdminReportRecord, b: AdminReportRecord, order: 'a
   return order === 'asc' ? result : -result
 }
 
+function compareUpdatedAt(a: AdminReportRecord, b: AdminReportRecord) {
+  return b.updated_at.localeCompare(a.updated_at)
+}
+
 function compareValues(sort: Exclude<AdminReportSort, 'department_assigned_at'>, a: AdminReportRecord, b: AdminReportRecord) {
   if (sort === 'priority') return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
-  if (sort === 'status' || sort === 'ticket_number') return a[sort].localeCompare(b[sort])
+  if (sort === 'status') return STATUS_RANK[a.status] - STATUS_RANK[b.status]
+  if (sort === 'ticket_number') return a.ticket_number.localeCompare(b.ticket_number)
   return a[sort].localeCompare(b[sort])
 }
 
@@ -135,9 +140,17 @@ export function paginateAdminReports(
   let filtered = filterAdminReports(records, query)
 
   filtered = [...filtered].sort((a, b) => {
-    if (query.sort === 'department_assigned_at') return compareAssignedAt(a, b, query.order)
+    if (query.sort === 'department_assigned_at') {
+      const assigned = compareAssignedAt(a, b, query.order)
+      if (assigned !== 0) return assigned
+      const status = STATUS_RANK[a.status] - STATUS_RANK[b.status]
+      return status !== 0 ? status : compareUpdatedAt(a, b)
+    }
     const result = compareValues(query.sort, a, b)
-    return query.order === 'asc' ? result : -result
+    const directed = query.order === 'asc' ? result : -result
+    if (directed !== 0) return directed
+    if (query.sort === 'updated_at') return STATUS_RANK[a.status] - STATUS_RANK[b.status]
+    return compareUpdatedAt(a, b)
   })
 
   const total = filtered.length

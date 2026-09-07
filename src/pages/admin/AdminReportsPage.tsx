@@ -225,7 +225,7 @@ export function AdminReportsPage() {
       next.set('order', query.order === 'asc' ? 'desc' : 'asc')
     } else {
       next.set('sort', field)
-      next.set('order', field === 'ticket_number' || field === 'department_assigned_at' ? 'asc' : 'desc')
+      next.set('order', field === 'ticket_number' || field === 'department_assigned_at' || field === 'status' ? 'asc' : 'desc')
     }
     next.delete('page')
     setSearchParams(next)
