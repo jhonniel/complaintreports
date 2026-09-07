@@ -20,12 +20,20 @@ export function canAssignReports(role: AdminRole) {
   return role === 'admin' || role === 'super_admin'
 }
 
+export function canViewStatusHistory(role: AdminRole) {
+  return role === 'admin' || role === 'super_admin'
+}
+
+export function canViewComplainantInfo(role: AdminRole) {
+  return role === 'admin' || role === 'super_admin'
+}
+
 export function canManageStaff(role: AdminRole) {
   return role === 'admin' || role === 'super_admin'
 }
 
 export function canDeleteReports(role: AdminRole) {
-  return isAdminRole(role)
+  return role === 'admin' || role === 'super_admin'
 }
 
 export function initials(name: string) {

@@ -1,6 +1,7 @@
 import { Router, type NextFunction, type Request, type Response } from 'express'
 import express from 'express'
-import { createAccessLogSchema, normalizeAccessPage } from '../../shared/map.ts'
+import { createAccessLogSchema, normalizeAccessPage, reverseGeocodeSchema } from '../../shared/map.ts'
+import { toSitePlace } from '../../shared/siteAddress.ts'
 import {
   REPORT_PHOTO_MAX_FILE_BYTES,
   createReportSchema,
@@ -11,9 +12,10 @@ import {
   toPublicTrackView,
   type CreateReportInput,
 } from '../../shared/report.ts'
+import { reverseGeocodeKidapawan, suggestKidapawanPlaces } from '../lib/geocode.ts'
 import { sendError } from '../lib/http.ts'
 import { captchaAccepted } from '../lib/captcha.ts'
-import { geocodeKidapawanAddress } from '../lib/geocode.ts'
+import { clientIp, geolocateRequest } from '../lib/ipGeo.ts'
 import { logError } from '../lib/log.ts'
 import { sendTicketEmailIfRequested } from '../lib/mail.ts'
 import {
@@ -49,6 +51,43 @@ publicRouter.get(
       }
       sendError(res, 500, 'Something went wrong. Please try again.')
     }
+  }),
+)
+
+publicRouter.post(
+  '/geocode/reverse',
+  publicWriteLimiter,
+  validateBody(reverseGeocodeSchema),
+  asyncHandler(async (req, res) => {
+    const { latitude, longitude } = req.body as { latitude: number; longitude: number }
+    const place = await reverseGeocodeKidapawan(latitude, longitude)
+    if (!place) {
+      sendError(
+        res,
+        400,
+        'That GPS point is outside Kidapawan City. Type the street, barangay, or landmark instead.',
+      )
+      return
+    }
+    res.json(toSitePlace({ ...place, latitude, longitude }))
+  }),
+)
+
+publicRouter.get(
+  '/geocode/suggest',
+  publicReadLimiter,
+  asyncHandler(async (req, res) => {
+    const q = firstString(req.query.q).trim()
+    if (q.length < 2) {
+      res.json({ suggestions: [] })
+      return
+    }
+    if (q.length > 80) {
+      sendError(res, 400, 'That search is too long.')
+      return
+    }
+    const suggestions = await suggestKidapawanPlaces(q)
+    res.json({ suggestions: suggestions.map(toSitePlace) })
   }),
 )
 
@@ -112,7 +151,7 @@ publicRouter.post(
   },
   validateBody(createReportSchema),
   asyncHandler(async (req, res) => {
-    let payload = req.body as CreateReportInput
+    const payload = req.body as CreateReportInput
     if (!captchaAccepted(payload.captcha_token)) {
       sendError(res, 400, 'Unable to submit your report.')
       return
@@ -121,20 +160,6 @@ publicRouter.post(
     if (photos.some((photo) => !isManagedPhotoKey(photo.key))) {
       sendError(res, 400, 'One of the photos could not be attached. Please upload them again.')
       return
-    }
-    if (!payload.location) {
-      const geo = await geocodeKidapawanAddress(payload.address)
-      if (geo) {
-        payload = {
-          ...payload,
-          location: {
-            latitude: geo.latitude,
-            longitude: geo.longitude,
-            accuracy: null,
-            timestamp: new Date().toISOString(),
-          },
-        }
-      }
     }
     try {
       const created = await getReportStore().createReport(payload)
@@ -241,20 +266,25 @@ publicRouter.post(
   asyncHandler(async (req, res) => {
     const payload = req.body as {
       session_id: string
-      latitude: number
-      longitude: number
-      accuracy?: number | null
       page?: string
+      latitude?: number
+      longitude?: number
     }
     const userAgent = (req.get('user-agent') ?? '').slice(0, 300) || null
     try {
-      await getReportStore().createAccessLog({
-        session_id: payload.session_id,
+      const ip = clientIp(req)
+      const geo = await geolocateRequest(req, {
         latitude: payload.latitude,
         longitude: payload.longitude,
-        accuracy: payload.accuracy ?? null,
+      })
+      await getReportStore().createAccessLog({
+        session_id: payload.session_id,
+        latitude: geo?.latitude ?? null,
+        longitude: geo?.longitude ?? null,
+        accuracy: geo?.accuracy ?? null,
         page: normalizeAccessPage(payload.page),
         user_agent: userAgent,
+        ip_address: ip,
       })
       res.status(201).json({ ok: true })
     } catch (error) {

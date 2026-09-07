@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { personalFieldsSchema, reportFieldsSchema } from './report.ts'
+import { locationSchema, personalFieldsSchema, reportFieldsSchema } from './report.ts'
 
 export const FACEBOOK_INTAKE_STATUSES = ['new', 'converted', 'dismissed'] as const
 export type FacebookIntakeStatus = (typeof FACEBOOK_INTAKE_STATUSES)[number]
@@ -55,7 +55,9 @@ export const facebookImportSchema = z.object({
   kind: z.enum(FACEBOOK_INTAKE_KINDS),
 })
 
-export const facebookConvertSchema = personalFieldsSchema.extend(reportFieldsSchema.shape)
+export const facebookConvertSchema = personalFieldsSchema.extend(reportFieldsSchema.shape).extend({
+  location: locationSchema,
+})
 
 export const facebookIntakeListQuerySchema = z.object({
   status: z.enum(FACEBOOK_INTAKE_STATUSES).optional(),

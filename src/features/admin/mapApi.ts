@@ -1,4 +1,4 @@
-import type { AccessMapQuery, MapAccessCluster, MapFilterQuery, MapReportPoint } from '@shared/map'
+import type { AccessMapQuery, MapAccessCluster, MapAccessVisit, MapFilterQuery, MapReportPoint } from '@shared/map'
 import { api } from '@/services/api'
 
 function asParams(query: MapFilterQuery | AccessMapQuery) {
@@ -16,5 +16,5 @@ export function fetchMapReports(query: MapFilterQuery) {
 
 export function fetchMapAccess(query: AccessMapQuery) {
   const qs = asParams(query)
-  return api.get<{ clusters: MapAccessCluster[] }>(`/admin/map/access${qs ? `?${qs}` : ''}`)
+  return api.get<{ clusters: MapAccessCluster[]; visits: MapAccessVisit[] }>(`/admin/map/access${qs ? `?${qs}` : ''}`)
 }

@@ -176,7 +176,7 @@ export function ReportActionModals({
       <Modal
         open={action === 'assign'}
         title="Assign report"
-        description={`Ticket ${ticketNumber}`}
+        description="Assign the office and a user in that office. They can then update status, priority, and notes."
         onClose={onClose}
         footer={
           <div className="flex justify-end gap-2">
@@ -202,8 +202,18 @@ export function ReportActionModals({
         }
       >
         <div className="space-y-3">
-          <Field id="action-department" label="Department" required={false}>
-            <Select value={nextDepartment} onChange={(event) => setNextDepartment(event.target.value)}>
+          <Field id="action-department" label="Department" required={false} hint="The office that owns this ticket.">
+            <Select
+              value={nextDepartment}
+              onChange={(event) => {
+                const department = event.target.value
+                setNextDepartment(department)
+                const assigned = staff.find((member) => member.user_id === nextAdmin)
+                if (assigned && department && assigned.department_id && assigned.department_id !== department) {
+                  setNextAdmin('')
+                }
+              }}
+            >
               <option value="">Unassigned</option>
               {assignableDepartments.map((department) => (
                 <option key={department.id} value={department.id}>
@@ -212,11 +222,28 @@ export function ReportActionModals({
               ))}
             </Select>
           </Field>
-          <Field id="action-staff" label="Assigned staff" required={false}>
-            <Select value={nextAdmin} onChange={(event) => setNextAdmin(event.target.value)}>
+          <Field
+            id="action-staff"
+            label="Assigned staff"
+            required={false}
+            hint={
+              nextDepartment
+                ? 'Users added under this department on the Departments page.'
+                : 'Pick a department first, or choose a user to set the office automatically.'
+            }
+          >
+            <Select
+              value={nextAdmin}
+              onChange={(event) => {
+                const userId = event.target.value
+                setNextAdmin(userId)
+                const member = staff.find((entry) => entry.user_id === userId)
+                if (member?.department_id) setNextDepartment(member.department_id)
+              }}
+            >
               <option value="">Unassigned</option>
               {staff
-                .filter((member) => !nextDepartment || !member.department_id || member.department_id === nextDepartment)
+                .filter((member) => !nextDepartment || member.department_id === nextDepartment)
                 .map((member) => (
                 <option key={member.user_id} value={member.user_id}>
                   {member.full_name}
@@ -225,6 +252,12 @@ export function ReportActionModals({
               ))}
             </Select>
           </Field>
+          {nextDepartment &&
+          staff.filter((member) => member.department_id === nextDepartment).length === 0 ? (
+            <p className="text-xs text-ink-500">
+              No users in this office yet. Add them on the Departments page, then assign the ticket.
+            </p>
+          ) : null}
           {error && action === 'assign' ? <p className="text-sm text-danger-700">{error}</p> : null}
         </div>
       </Modal>

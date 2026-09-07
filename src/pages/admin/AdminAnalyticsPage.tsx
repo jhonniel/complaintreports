@@ -53,7 +53,7 @@ export function AdminAnalyticsPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="font-display text-3xl font-semibold">Analytics</h1>
+          <h1 className="font-display text-2xl font-semibold sm:text-3xl">Analytics</h1>
           <p className="mt-1 text-sm text-ink-500">
             Charts never include names, contact details, exact birth dates, or exact personal
             location. Age is grouped. Geographic totals use rounded areas only.
@@ -99,14 +99,14 @@ export function AdminAnalyticsPage() {
       ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Reports in range" value={totals?.total} loading={loading} />
-        <StatCard label="Users in range" value={users?.total} hint="Unique reporters in this filter" loading={loading} />
-        <StatCard label="New users" value={users?.new} loading={loading} />
-        <StatCard label="Returning users" value={users?.returning} loading={loading} />
+        <StatCard label="Reports in range" value={totals?.total} hint="Tickets created in this date range" loading={loading} />
+        <StatCard label="Users in range" value={users?.total} hint="Unique reporters in this date range" loading={loading} />
+        <StatCard label="New users" value={users?.new} hint="New + returning equals users in range" loading={loading} />
+        <StatCard label="Returning users" value={users?.returning} hint="New + returning equals users in range" loading={loading} />
         <StatCard label="Assigned" value={totals?.assigned} hint="Tickets with a department" loading={loading} />
-        <StatCard label="Unassigned" value={totals?.unassigned} loading={loading} />
-        <StatCard label="With location" value={geography?.with_location} loading={loading} />
-        <StatCard label="Not captured" value={geography?.without_location} hint="Reports without coordinates" loading={loading} />
+        <StatCard label="Unassigned" value={totals?.unassigned} hint="Assigned + unassigned equals reports in range" loading={loading} />
+        <StatCard label="With map pin" value={geography?.with_location} loading={loading} />
+        <StatCard label="No map pin" value={geography?.without_location} hint="With map pin + no map pin equals reports in range" loading={loading} />
       </div>
 
       <DashboardCharts data={data} loading={loading} />

@@ -45,8 +45,8 @@ export function AdminTopBar({ onMenuClick, menuLabel }: AdminTopBarProps) {
   }, [])
 
   return (
-    <header className="flex h-16 items-center gap-3 border-b border-ink-200 bg-white px-4">
-      <Button variant="ghost" size="sm" className="px-2" onClick={onMenuClick} aria-label={menuLabel}>
+    <header className="flex h-14 shrink-0 items-center gap-2 border-b border-ink-200 bg-white px-3 sm:h-16 sm:gap-3 sm:px-4">
+      <Button variant="ghost" size="sm" className="shrink-0 px-2" onClick={onMenuClick} aria-label={menuLabel}>
         <span className="lg:hidden">
           <Menu className="size-5" />
         </span>
@@ -78,7 +78,7 @@ export function AdminTopBar({ onMenuClick, menuLabel }: AdminTopBarProps) {
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search tickets"
-          className="max-w-xl pl-9"
+          className="h-10 max-w-xl pl-9 sm:h-11"
           aria-label="Search reports"
         />
       </form>
@@ -108,13 +108,13 @@ export function AdminTopBar({ onMenuClick, menuLabel }: AdminTopBarProps) {
         </Button>
         {alertsOpen ? (
           <div
-            className="absolute right-0 z-20 mt-2 w-72 rounded-lg border border-ink-200 bg-white p-3 shadow-raised"
+            className="absolute right-0 z-20 mt-2 w-[min(18rem,calc(100vw-1.5rem))] rounded-lg border border-ink-200 bg-white p-3 shadow-raised"
             role="menu"
           >
             <p className="text-sm font-semibold text-ink-900">Attention</p>
             <p className="mt-1 text-xs text-ink-500">
               {pending > 0
-                ? `${pending} pending report${pending === 1 ? '' : 's'} still need review.`
+                ? `${pending} open report${pending === 1 ? '' : 's'} still need action.`
                 : 'No pending reports in this workspace.'}
             </p>
             <div className="mt-3 space-y-1">
@@ -145,7 +145,7 @@ export function AdminTopBar({ onMenuClick, menuLabel }: AdminTopBarProps) {
       </div>
       <Link
         to="/admin/settings"
-        className="flex items-center gap-2 rounded-md border border-ink-200 px-2 py-1.5 hover:bg-ink-50"
+        className="flex shrink-0 items-center gap-2 rounded-md border border-ink-200 px-1.5 py-1.5 hover:bg-ink-50 sm:px-2"
         aria-label="Open settings"
       >
         <div className="flex size-8 items-center justify-center rounded-full bg-pine-800 text-xs font-semibold text-white">

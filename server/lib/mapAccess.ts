@@ -4,9 +4,10 @@ import { roundAccessCell } from '../../shared/map.ts'
 import { manilaDateKey } from './adminReports.ts'
 
 export interface AccessLogRow {
-  latitude: number
-  longitude: number
+  latitude: number | null
+  longitude: number | null
   createdAt: string
+  ipAddress?: string | null
 }
 
 export function mapFilterAsListQuery(filter: MapFilterQuery): AdminReportListQuery {
@@ -30,13 +31,20 @@ export function aggregateAccessLogs(rows: AccessLogRow[], query: AccessMapQuery)
   for (const row of rows) {
     if (query.date_from && manilaDateKey(row.createdAt) < query.date_from) continue
     if (query.date_to && manilaDateKey(row.createdAt) > query.date_to) continue
-    if (!Number.isFinite(row.latitude) || !Number.isFinite(row.longitude)) continue
-    const latitude = roundAccessCell(row.latitude)
-    const longitude = roundAccessCell(row.longitude)
-    const key = `${latitude},${longitude}`
+    const latitude = row.latitude
+    const longitude = row.longitude
+    if (typeof latitude !== 'number' || typeof longitude !== 'number') continue
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) continue
+    const cellLat = roundAccessCell(latitude)
+    const cellLng = roundAccessCell(longitude)
+    const key = `${cellLat},${cellLng}`
     const current = counts.get(key)
-    if (current) current.count += 1
-    else counts.set(key, { latitude, longitude, count: 1 })
+    if (current) {
+      current.count += 1
+      if (row.ipAddress) current.ip_address = row.ipAddress
+    } else {
+      counts.set(key, { latitude: cellLat, longitude: cellLng, count: 1, ip_address: row.ipAddress ?? null })
+    }
   }
   return [...counts.values()].sort((a, b) => b.count - a.count)
 }

@@ -9,6 +9,7 @@ interface FieldProps {
   hint?: string
   error?: string
   children: ReactNode
+  action?: ReactNode
   className?: string
   optionalLabel?: string
 }
@@ -20,6 +21,7 @@ export function Field({
   hint,
   error,
   children,
+  action,
   className,
   optionalLabel = '(optional)',
 }: FieldProps) {
@@ -50,7 +52,14 @@ export function Field({
           <span className="ml-1 font-normal text-ink-400">{optionalLabel}</span>
         ) : null}
       </Label>
-      {control}
+      {action ? (
+        <div className="flex items-start gap-2">
+          <div className="min-w-0 flex-1">{control}</div>
+          {action}
+        </div>
+      ) : (
+        control
+      )}
       {hint && !error ? (
         <p id={hintId} className="text-xs text-ink-500">
           {hint}

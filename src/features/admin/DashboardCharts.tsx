@@ -3,7 +3,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Legend,
   Line,
   LineChart,
   Pie,
@@ -14,6 +13,7 @@ import {
   YAxis,
 } from 'recharts'
 import type { AnalyticsResponse } from '@shared/analytics'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { Card, CardBody } from '@/components/ui/Card'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -50,16 +50,18 @@ interface DashboardChartsProps {
 }
 
 export function DashboardCharts({ data, loading }: DashboardChartsProps) {
+  const isDesktop = useMediaQuery('(min-width: 640px)')
+  const categoryAxisWidth = isDesktop ? 120 : 72
   if (loading) {
     return (
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid min-w-0 gap-4 lg:grid-cols-2">
         <ChartSkeleton title="Reports over time" />
         <ChartSkeleton title="Reports by category" />
         <ChartSkeleton title="Status distribution" />
         <ChartSkeleton title="Reporting users" />
         <ChartSkeleton title="Reports by gender" />
         <ChartSkeleton title="Reports by age" />
-        <ChartSkeleton title="Reports with a location" />
+        <ChartSkeleton title="Reports with a map pin" />
         <ChartSkeleton title="Approximate report areas" />
       </div>
     )
@@ -70,13 +72,13 @@ export function DashboardCharts({ data, loading }: DashboardChartsProps) {
   const ageSlice = (data?.demographics?.ages ?? []).filter((item) => item.count > 0)
   const locationSlice = data
     ? [
-        { name: 'With location', count: data.geography.with_location, color: SPRING },
-        { name: 'Not captured', count: data.geography.without_location, color: INK },
+        { name: 'With map pin', count: data.geography.with_location, color: SPRING },
+        { name: 'No map pin', count: data.geography.without_location, color: INK },
       ].filter((item) => item.count > 0)
     : []
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid min-w-0 gap-4 lg:grid-cols-2">
       <Card>
         <CardBody>
           <p className="text-sm font-semibold text-ink-800">Reports over time</p>
@@ -87,7 +89,7 @@ export function DashboardCharts({ data, loading }: DashboardChartsProps) {
               description="Submitted tickets will appear here as a trend over time."
             />
           ) : (
-            <div className="mt-4 h-64">
+            <div className="mt-4 h-56 min-w-0 sm:h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={data.timeseries} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#d6cfb8" />
@@ -112,12 +114,12 @@ export function DashboardCharts({ data, loading }: DashboardChartsProps) {
               description="Category totals will appear after residents submit reports."
             />
           ) : (
-            <div className="mt-4 h-64">
+            <div className="mt-4 h-56 min-w-0 sm:h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.categories} layout="vertical" margin={{ top: 8, right: 16, left: 16, bottom: 0 }}>
+                <BarChart data={data.categories} layout="vertical" margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#d6cfb8" />
                   <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                  <YAxis type="category" dataKey="name" width={120} tick={{ fontSize: 11 }} />
+                  <YAxis type="category" dataKey="name" width={categoryAxisWidth} tick={{ fontSize: 10 }} />
                   <Tooltip />
                   <Bar dataKey="count" name="Reports" fill={PINE} radius={[0, 4, 4, 0]} />
                 </BarChart>
@@ -137,28 +139,10 @@ export function DashboardCharts({ data, loading }: DashboardChartsProps) {
               description="Status mix will appear once tickets exist in this range."
             />
           ) : (
-            <div className="mt-4 h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={data.statuses.filter((item) => item.count > 0)}
-                    dataKey="count"
-                    nameKey="name"
-                    innerRadius={58}
-                    outerRadius={88}
-                    paddingAngle={2}
-                  >
-                    {data.statuses
-                      .filter((item) => item.count > 0)
-                      .map((item) => (
-                        <Cell key={item.status} fill={STATUS_COLORS[item.status] ?? INK} />
-                      ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
+            <DonutChart
+              data={data.statuses.filter((item) => item.count > 0)}
+              getColor={(item) => STATUS_COLORS[item.status ?? ''] ?? INK}
+            />
           )}
         </CardBody>
       </Card>
@@ -169,14 +153,14 @@ export function DashboardCharts({ data, loading }: DashboardChartsProps) {
           <p className="mt-1 text-xs text-ink-400">
             Unique residents are counted with a private phone fingerprint. Names and numbers are never shown.
           </p>
-          {!data || (data.users.total === 0 && data.totals.reporting_users === 0) ? (
+          {!data || data.users.total === 0 ? (
             <EmptyState
               className="py-10"
               title="No reporting users yet"
               description="Unique and returning reporters will appear after the first tickets."
             />
           ) : (
-            <div className="mt-4 h-64">
+            <div className="mt-4 h-56 min-w-0 sm:h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={[
@@ -208,19 +192,10 @@ export function DashboardCharts({ data, loading }: DashboardChartsProps) {
               description="Gender totals will appear after residents submit reports."
             />
           ) : (
-            <div className="mt-4 h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={genderSlice} dataKey="count" nameKey="name" innerRadius={58} outerRadius={88} paddingAngle={2}>
-                    {genderSlice.map((item) => (
-                      <Cell key={item.name} fill={GENDER_COLORS[item.name] ?? INK} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
+            <DonutChart
+              data={genderSlice}
+              getColor={(item) => GENDER_COLORS[item.name] ?? INK}
+            />
           )}
         </CardBody>
       </Card>
@@ -236,7 +211,7 @@ export function DashboardCharts({ data, loading }: DashboardChartsProps) {
               description="Age groups will appear after residents submit reports."
             />
           ) : (
-            <div className="mt-4 h-64">
+            <div className="mt-4 h-56 min-w-0 sm:h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data?.demographics?.ages ?? []} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#d6cfb8" />
@@ -253,28 +228,16 @@ export function DashboardCharts({ data, loading }: DashboardChartsProps) {
 
       <Card>
         <CardBody>
-          <p className="text-sm font-semibold text-ink-800">Reports with a location</p>
+          <p className="text-sm font-semibold text-ink-800">Reports with a map pin</p>
           <p className="mt-1 text-xs text-ink-400">Whether a ticket could be placed on the map. Exact points stay on the map page.</p>
           {empty || locationSlice.length === 0 ? (
             <EmptyState
               className="py-10"
-              title="No location stats"
+              title="No map pin stats"
               description="Location capture rates will appear after tickets are submitted."
             />
           ) : (
-            <div className="mt-4 h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={locationSlice} dataKey="count" nameKey="name" innerRadius={58} outerRadius={88} paddingAngle={2}>
-                    {locationSlice.map((item) => (
-                      <Cell key={item.name} fill={item.color} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
+            <DonutChart data={locationSlice} getColor={(item) => item.color ?? INK} />
           )}
         </CardBody>
       </Card>
@@ -292,7 +255,7 @@ export function DashboardCharts({ data, loading }: DashboardChartsProps) {
               description="Approximate areas appear after a report can be mapped from its address."
             />
           ) : (
-            <div className="mt-4 h-64">
+            <div className="mt-4 h-56 min-w-0 sm:h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={data.geography.areas} layout="vertical" margin={{ top: 8, right: 16, left: 24, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#d6cfb8" />
@@ -310,12 +273,54 @@ export function DashboardCharts({ data, loading }: DashboardChartsProps) {
   )
 }
 
+function DonutChart({
+  data,
+  getColor,
+}: {
+  data: Array<{ name: string; count: number; status?: string; color?: string }>
+  getColor: (item: { name: string; count: number; status?: string; color?: string }) => string
+}) {
+  return (
+    <div className="mt-4">
+      <div className="h-52 min-w-0 overflow-visible sm:h-60">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+            <Pie
+              data={data}
+              dataKey="count"
+              nameKey="name"
+              cx="50%"
+              cy="50%"
+              innerRadius="48%"
+              outerRadius="78%"
+              paddingAngle={2}
+            >
+              {data.map((item) => (
+                <Cell key={item.name} fill={getColor(item)} />
+              ))}
+            </Pie>
+            <Tooltip />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <ul className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1.5 text-xs text-ink-600">
+        {data.map((item) => (
+          <li key={item.name} className="flex items-center gap-1.5">
+            <span className="size-2.5 shrink-0 rounded-sm" style={{ backgroundColor: getColor(item) }} />
+            {item.name}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 function ChartSkeleton({ title }: { title: string }) {
   return (
     <Card>
       <CardBody>
         <p className="text-sm font-semibold text-ink-800">{title}</p>
-        <Skeleton className="mt-4 h-64" />
+        <Skeleton className="mt-4 h-56 min-w-0 sm:h-64" />
       </CardBody>
     </Card>
   )

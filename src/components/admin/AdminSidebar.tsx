@@ -48,9 +48,8 @@ export function AdminSidebar({ collapsed, mobileOpen, onCloseMobile }: AdminSide
       ) : null}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex flex-col bg-pine-950 text-pine-50 transition-all duration-300 ease-out lg:static lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-40 flex w-[min(16rem,calc(100vw-2.5rem))] flex-col bg-pine-950 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] text-pine-50 transition-all duration-300 ease-out lg:static lg:translate-x-0',
           collapsed ? 'lg:w-[4.5rem]' : 'lg:w-64',
-          'w-64',
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0',
         )}
       >

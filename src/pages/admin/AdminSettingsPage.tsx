@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import type { CatalogItem } from '@shared/catalog'
 import type { StaffOption } from '@shared/adminReport'
 import { canManageStaff, ROLE_LABELS } from '@shared/auth'
@@ -74,7 +75,7 @@ export function AdminSettingsPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-3xl font-semibold">Settings</h1>
+        <h1 className="font-display text-2xl font-semibold sm:text-3xl">Settings</h1>
         <p className="mt-1 text-sm text-ink-500">Profile, session, and environment status for this workspace.</p>
       </div>
       <Card>
@@ -96,8 +97,8 @@ export function AdminSettingsPage() {
             <strong>{staffDepartmentName ?? (profile?.departmentId ? 'Assigned' : 'Not assigned')}</strong>
           </p>
           <p className="text-ink-500">
-            Administrators assign tickets to a department. Staff in that department can update status, priority, and
-            notes on those tickets.
+            Administrators assign tickets to a department and to a user in that office. Staff in that
+            department can update status, priority, and notes on those tickets.
           </p>
         </CardBody>
       </Card>
@@ -108,7 +109,11 @@ export function AdminSettingsPage() {
           </CardHeader>
           <CardBody className="space-y-3 text-sm">
             <p className="text-ink-500">
-              Put staff in a department so they only see and act on tickets assigned to that office.
+              Add users under a department on the{' '}
+              <Link className="font-semibold text-pine-800 hover:underline" to="/admin/departments">
+                Departments
+              </Link>{' '}
+              page so tickets can be assigned to them. You can also move existing accounts here.
             </p>
             {staff.length === 0 ? (
               <p className="text-ink-500">No staff accounts yet.</p>

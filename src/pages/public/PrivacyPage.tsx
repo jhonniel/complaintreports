@@ -8,11 +8,11 @@ export function PrivacyPage() {
       <div className="mt-6 space-y-4 text-base leading-relaxed text-ink-700">
         <p>
           {APP_NAME} collects personal information only to process civic reports. This includes
-          your name, birth date, gender, address, phone number, optional email, and the report
-          itself.
+          your name, birth date, gender, phone number, optional email, the report, and the site
+          address of the concern.
         </p>
         <p>
-          Public pages never display your full name, phone number, email, or address. Only
+          Public pages never display your full name, phone number, email, or site address. Only
           authorized administrators can view personally identifiable information.
         </p>
         <p>
@@ -20,10 +20,15 @@ export function PrivacyPage() {
           email when the field is left blank.
         </p>
         <p>
-          If you allow location in the browser, we save those coordinates on the ticket so
-          authorized staff can pin the report on the city map. If you decline, we may still place
-          the pin from the address you entered. The public track page never shows a map pin or
-          coordinates.
+          We place the report pin from GPS or a Kidapawan address you pick. The address is stored as
+          street, barangay, city, province, and zip code, together with latitude and longitude so
+          staff can navigate there. Suggestions only cover Kidapawan City. You can still edit the
+          address afterward. The public track page never shows a map pin or coordinates.
+        </p>
+        <p>
+          When you open the site, we save your IP address and an approximate public-network
+          location so authorized staff can see System access pins and a visitor IP log. This is not
+          precise GPS, and public pages never show those IPs.
         </p>
         <p>
           If you attach photos, they are compressed and stored so authorized staff can review the

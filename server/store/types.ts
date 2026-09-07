@@ -4,6 +4,7 @@ import type {
   AdminReportListQuery,
   AdminReportListResult,
   AssignReportInput,
+  CreateStaffInput,
   StaffOption,
   UpdatePriorityInput,
   UpdateStatusInput,
@@ -18,6 +19,7 @@ import type {
   AccessMapQuery,
   CreateAccessLogInput,
   MapAccessCluster,
+  MapAccessVisit,
   MapFilterQuery,
   MapReportPoint,
 } from '../../shared/map.ts'
@@ -49,7 +51,7 @@ export interface ReportStore {
   listPublicCategories(): Promise<PublicCategory[]>
   createReport(input: CreateReportInput): Promise<CreatedReport>
   findPublicByTicket(ticketNumber: string): Promise<PublicTrackView | null>
-  getAnalytics(query: AnalyticsQuery): Promise<AnalyticsResponse>
+  getAnalytics(query: AnalyticsQuery, departmentId?: string | null): Promise<AnalyticsResponse>
   listAdminReports(query: AdminReportListQuery): Promise<AdminReportListResult>
   getAdminReport(ticketNumber: string): Promise<AdminReportDetail | null>
   updateReportStatus(
@@ -77,9 +79,11 @@ export interface ReportStore {
   updateDepartment(id: string, input: CatalogUpdateInput): Promise<CatalogItem>
   listStaff(): Promise<StaffOption[]>
   updateStaffDepartment(userId: string, departmentId: string | null): Promise<StaffOption>
+  createStaff(input: CreateStaffInput): Promise<StaffOption>
   createAccessLog(input: StoredAccessLogInput): Promise<void>
   listMapReports(query: MapFilterQuery): Promise<MapReportPoint[]>
   listMapAccess(query: AccessMapQuery): Promise<MapAccessCluster[]>
+  listRecentAccessLogs(query: AccessMapQuery, limit?: number): Promise<MapAccessVisit[]>
   listFacebookIntakes(status?: FacebookIntakeStatus): Promise<FacebookIntakeItem[]>
   createFacebookIntake(input: FacebookImportInput, actor: AdminActorRef): Promise<FacebookIntakeItem>
   convertFacebookIntake(

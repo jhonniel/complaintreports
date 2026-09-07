@@ -14,6 +14,7 @@ import {
   type Gender,
   type PublicCategory,
 } from '@shared/report'
+import { formatSiteCoordinates } from '@shared/siteAddress'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card, CardBody } from '@/components/ui/Card'
@@ -24,6 +25,7 @@ import { Select } from '@/components/ui/Select'
 import { Textarea } from '@/components/ui/Textarea'
 import { fetchCategories, submitReport, uploadReportPhoto } from '@/features/reports/reportApi'
 import { formatPhotoLimitHint, ReportPhotosField } from '@/features/reports/ReportPhotosField'
+import { SiteAddressField, type SiteCoordinates } from '@/features/reports/SiteAddressField'
 import type { DraftPhoto } from '@/features/reports/reportPhotos'
 import { LAST_TICKET_KEY } from '@/lib/constants'
 import { canAddPhotos, compressReportPhoto, photosWithinTotalLimit } from '@/lib/compressImage'
@@ -31,14 +33,6 @@ import { cn } from '@/lib/cn'
 import { ApiError } from '@/services/api'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { formatIsoDate } from '@/utils/format'
-import {
-  clearStoredLocationPrompt,
-  queryGeolocationPermission,
-  readStoredLocationPrompt,
-  requestReportLocation,
-  writeStoredLocationPrompt,
-  type ReportLocation,
-} from '@/lib/geolocation'
 
 const STEPS = ['Your details', 'Your report', 'Review']
 const PERSONAL_KEYS = new Set([
@@ -46,7 +40,6 @@ const PERSONAL_KEYS = new Set([
   'last_name',
   'birth_date',
   'gender',
-  'address',
   'phone',
   'email',
 ])
@@ -54,7 +47,7 @@ const PERSONAL_KEYS = new Set([
 function stepForErrors(errors: Record<string, string>) {
   const keys = Object.keys(errors)
   if (keys.some((key) => PERSONAL_KEYS.has(key))) return 1
-  if (keys.some((key) => key === 'category_id' || key === 'title' || key === 'description' || key === 'photos' || key.startsWith('photos.'))) return 2
+  if (keys.some((key) => key === 'category_id' || key === 'title' || key === 'address' || key === 'description' || key === 'photos' || key.startsWith('photos.'))) return 2
   return 3
 }
 
@@ -99,34 +92,12 @@ export function ReportForm() {
   const [photos, setPhotos] = useState<DraftPhoto[]>([])
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [compressingPhotos, setCompressingPhotos] = useState(false)
-  const [location, setLocation] = useState<ReportLocation | null>(() => {
-    const stored = readStoredLocationPrompt()
-    return stored?.decision === 'captured' ? stored.location : null
-  })
-  const locationRequest = useRef<Promise<ReportLocation | null> | null>(null)
-  const locationRef = useRef(location)
-  locationRef.current = location
+  const [sitePin, setSitePin] = useState<SiteCoordinates | null>(null)
   const photosRef = useRef(photos)
   photosRef.current = photos
 
   useEffect(() => {
     void loadCategories()
-  }, [])
-
-  useEffect(() => {
-    const stored = readStoredLocationPrompt()
-    if (stored?.decision === 'captured') return
-
-    let cancelled = false
-    void (async () => {
-      const permission = await queryGeolocationPermission()
-      if (cancelled) return
-      if (permission === 'granted') void captureLocation()
-    })()
-
-    return () => {
-      cancelled = true
-    }
   }, [])
 
   async function loadCategories() {
@@ -216,23 +187,15 @@ export function ReportForm() {
     }
   }
 
-  async function captureLocation() {
-    if (locationRef.current) return locationRef.current
-    if (locationRequest.current) return locationRequest.current
-
-    const pending = requestReportLocation().then((result) => {
-      if (result.ok) {
-        locationRef.current = result.location
-        setLocation(result.location)
-        writeStoredLocationPrompt({ decision: 'captured', location: result.location })
-        return result.location
-      }
-      return null
+  function updateAddress(address: string, coordinates: SiteCoordinates | null) {
+    setSitePin(coordinates)
+    setValues((current) => ({ ...current, address }))
+    setErrors((current) => {
+      if (!current.address) return current
+      const next = { ...current }
+      delete next.address
+      return next
     })
-    locationRequest.current = pending
-    const captured = await pending
-    if (locationRequest.current === pending) locationRequest.current = null
-    return captured
   }
 
   function validateStep(nextStep: number) {
@@ -253,7 +216,6 @@ export function ReportForm() {
     setFormError(null)
     setSubmitting(true)
     try {
-      const captured = location ?? (await captureLocation())
       const uploadedPhotos = []
       for (const photo of photos) {
         uploadedPhotos.push(await uploadReportPhoto(photo.blob))
@@ -262,8 +224,15 @@ export function ReportForm() {
         ...values,
         gender: values.gender as Gender,
         email: values.email.trim() ? values.email.trim() : undefined,
-        location: captured,
         photos: uploadedPhotos,
+        location: sitePin
+          ? {
+              latitude: sitePin.latitude,
+              longitude: sitePin.longitude,
+              accuracy: null,
+              timestamp: new Date().toISOString(),
+            }
+          : undefined,
       }
       const parsed = createReportSchema.safeParse(payload)
       if (!parsed.success) {
@@ -275,7 +244,6 @@ export function ReportForm() {
       }
 
       const created = await submitReport(parsed.data)
-      clearStoredLocationPrompt()
       sessionStorage.setItem(
         LAST_TICKET_KEY,
         JSON.stringify({
@@ -318,7 +286,6 @@ export function ReportForm() {
               event.preventDefault()
               if (step < 3) {
                 if (!validateStep(step + 1)) return
-                void captureLocation()
                 setStep((current) => current + 1)
                 return
               }
@@ -377,13 +344,6 @@ export function ReportForm() {
                     </Select>
                   </Field>
                 </div>
-                <Field id="address" label="Address" required error={errors.address}>
-                  <Input
-                    autoComplete="street-address"
-                    value={values.address}
-                    onChange={(event) => update('address', event.target.value)}
-                  />
-                </Field>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field
                     id="phone"
@@ -452,6 +412,13 @@ export function ReportForm() {
                     placeholder="Short summary of the concern"
                   />
                 </Field>
+                <SiteAddressField
+                  id="address"
+                  value={values.address}
+                  coordinates={sitePin}
+                  error={errors.address}
+                  onChange={updateAddress}
+                />
                 <Field
                   id="description"
                   label="Description"
@@ -487,6 +454,7 @@ export function ReportForm() {
             {step === 3 ? (
               <ReviewSummary
                 values={values}
+                coordinates={sitePin}
                 categoryName={categoryName}
                 photos={photos}
                 onEditDetails={() => {
@@ -536,12 +504,14 @@ export function ReportForm() {
 
 function ReviewSummary({
   values,
+  coordinates,
   categoryName,
   photos,
   onEditDetails,
   onEditReport,
 }: {
   values: FormValues
+  coordinates: SiteCoordinates | null
   categoryName: string
   photos: DraftPhoto[]
   onEditDetails: () => void
@@ -561,10 +531,6 @@ function ReviewSummary({
           <div className="min-w-0">
             <p className="text-[0.7rem] font-semibold tracking-[0.16em] text-pine-700 uppercase">Reporter</p>
             <h2 className="mt-1 font-display text-2xl font-semibold text-pretty text-ink-950">{fullName}</h2>
-            <p className="mt-2 flex items-start gap-2 text-sm leading-relaxed text-ink-700">
-              <MapPin className="mt-0.5 size-4 shrink-0 text-pine-700" aria-hidden="true" />
-              <span>{values.address}</span>
-            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-end">
             <Badge variant="pine" className="normal-case tracking-normal">
@@ -613,6 +579,17 @@ function ReviewSummary({
             </button>
           </div>
           <h3 className="mt-3 font-display text-xl font-semibold text-pretty text-ink-950">{values.title}</h3>
+          <p className="mt-3 flex items-start gap-2 text-sm leading-relaxed text-ink-700">
+            <MapPin className="mt-0.5 size-4 shrink-0 text-pine-700" aria-hidden="true" />
+            <span>
+              {values.address}
+              {coordinates ? (
+                <span className="mt-1 block text-xs text-ink-500">
+                  {formatSiteCoordinates(coordinates.latitude, coordinates.longitude)}
+                </span>
+              ) : null}
+            </span>
+          </p>
           <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-ink-700">{values.description}</p>
           {photos.length > 0 ? (
             <ul className="mt-5 grid grid-cols-3 gap-2">

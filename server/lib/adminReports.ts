@@ -1,4 +1,4 @@
-import { MANILA_TIME_ZONE, PRIORITY_RANK, normalizeTicketNumber, type ReportPriority, type ReportStatus } from '../../shared/report.ts'
+import { PRIORITY_RANK, manilaDateKey, normalizeTicketNumber, type ReportPriority, type ReportStatus } from '../../shared/report.ts'
 import type {
   AdminReportDetail,
   AdminReportListItem,
@@ -20,6 +20,7 @@ export interface AdminReportRecord {
   longitude: number | null
   assigned_department_id: string | null
   assigned_department_name: string | null
+  department_assigned_at: string | null
   assigned_admin_id: string | null
   assigned_admin_name: string | null
   created_at: string
@@ -47,23 +48,44 @@ export class StaffNotFoundError extends Error {
   }
 }
 
-export function manilaDateKey(value: string) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  const parts = Object.fromEntries(
-    new Intl.DateTimeFormat('en-US', {
-      timeZone: MANILA_TIME_ZONE,
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    })
-      .formatToParts(date)
-      .map((part) => [part.type, part.value]),
-  )
-  return `${parts.year}-${parts.month}-${parts.day}`
+export class DuplicateStaffEmailError extends Error {
+  constructor() {
+    super('That email already has an account.')
+    this.name = 'DuplicateStaffEmailError'
+  }
 }
 
-function compareValues(sort: AdminReportSort, a: AdminReportRecord, b: AdminReportRecord) {
+export class StaffDepartmentMismatchError extends Error {
+  constructor() {
+    super('That staff member belongs to another department.')
+    this.name = 'StaffDepartmentMismatchError'
+  }
+}
+
+export function resolveAssignedDepartmentId(
+  departmentId: string | null | undefined,
+  staffDepartmentId: string | null | undefined,
+) {
+  if (staffDepartmentId) {
+    if (departmentId && departmentId !== staffDepartmentId) {
+      throw new StaffDepartmentMismatchError()
+    }
+    return staffDepartmentId
+  }
+  return departmentId
+}
+
+export { manilaDateKey }
+
+function compareAssignedAt(a: AdminReportRecord, b: AdminReportRecord, order: 'asc' | 'desc') {
+  if (!a.department_assigned_at && !b.department_assigned_at) return 0
+  if (!a.department_assigned_at) return 1
+  if (!b.department_assigned_at) return -1
+  const result = a.department_assigned_at.localeCompare(b.department_assigned_at)
+  return order === 'asc' ? result : -result
+}
+
+function compareValues(sort: Exclude<AdminReportSort, 'department_assigned_at'>, a: AdminReportRecord, b: AdminReportRecord) {
   if (sort === 'priority') return PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]
   if (sort === 'status' || sort === 'ticket_number') return a[sort].localeCompare(b[sort])
   return a[sort].localeCompare(b[sort])
@@ -80,6 +102,7 @@ export function toListItem(record: AdminReportRecord): AdminReportListItem {
     has_location: record.latitude != null && record.longitude != null,
     assigned_department_id: record.assigned_department_id,
     assigned_department_name: record.assigned_department_name,
+    department_assigned_at: record.department_assigned_at,
     assigned_admin_id: record.assigned_admin_id,
     assigned_admin_name: record.assigned_admin_name,
     created_at: record.created_at,
@@ -112,6 +135,7 @@ export function paginateAdminReports(
   let filtered = filterAdminReports(records, query)
 
   filtered = [...filtered].sort((a, b) => {
+    if (query.sort === 'department_assigned_at') return compareAssignedAt(a, b, query.order)
     const result = compareValues(query.sort, a, b)
     return query.order === 'asc' ? result : -result
   })

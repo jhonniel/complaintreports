@@ -3,11 +3,13 @@ import type { Request } from 'express'
 import {
   addNoteSchema,
   assignReportSchema,
+  createStaffSchema,
   isUuid,
   parseAdminReportListQuery,
   updatePrioritySchema,
   updateStaffSchema,
   updateStatusSchema,
+  type AdminReportDetail,
 } from '../../shared/adminReport.ts'
 import {
   catalogCreateSchema,
@@ -15,13 +17,16 @@ import {
   parseCatalogCreate,
   parseCatalogUpdate,
 } from '../../shared/catalog.ts'
-import { parseAccessMapQuery, parseMapFilterQuery, toMapAccessCluster, toMapReportPoint } from '../../shared/map.ts'
+import { parseAccessMapQuery, parseMapFilterQuery, toMapAccessCluster, toMapAccessVisit, toMapReportPoint } from '../../shared/map.ts'
+import { canViewComplainantInfo } from '../../shared/auth.ts'
 import { isTicketNumber, normalizeTicketNumber } from '../../shared/report.ts'
 import { parseAnalyticsQuery } from '../lib/analytics.ts'
 import { canAccessDepartmentReport, scopedStaffDepartmentId } from '../lib/departmentAccess.ts'
 import {
   DepartmentNotFoundError,
+  DuplicateStaffEmailError,
   ReportNotFoundError,
+  StaffDepartmentMismatchError,
   StaffNotFoundError,
 } from '../lib/adminReports.ts'
 import {
@@ -72,6 +77,25 @@ function staffScope(res: Parameters<typeof getAdminActor>[0]) {
   })
 }
 
+function presentAdminReport(res: Parameters<typeof getAdminActor>[0], report: AdminReportDetail) {
+  const actor = actorFrom(res)
+  if (!actor || canViewComplainantInfo(actor.role)) return report
+  return {
+    ...report,
+    reporter: {
+      full_name: '',
+      birth_date: '',
+      gender: 'prefer_not_to_say' as const,
+      address: report.reporter.address,
+      phone: '',
+      email: null,
+    },
+    photos: [],
+    notes: [],
+    history: [],
+  }
+}
+
 async function ensureDepartmentAccess(
   res: Parameters<typeof sendError>[0],
   ticketNumber: string,
@@ -114,9 +138,14 @@ function sendStoreError(res: Parameters<typeof sendError>[0], error: unknown) {
   if (
     error instanceof DepartmentNotFoundError ||
     error instanceof StaffNotFoundError ||
+    error instanceof StaffDepartmentMismatchError ||
     error instanceof LastActiveCategoryError
   ) {
     sendError(res, 400, error.message)
+    return true
+  }
+  if (error instanceof DuplicateStaffEmailError) {
+    sendError(res, 409, error.message)
     return true
   }
   if (error instanceof Error && error.message === 'STORAGE_UNAVAILABLE') {
@@ -183,7 +212,7 @@ adminRouter.get(
         sendError(res, 404, 'Report not found.')
         return
       }
-      res.json(report)
+      res.json(presentAdminReport(res, report))
     } catch (error) {
       if (sendStoreError(res, error)) return
       logError('admin', error)
@@ -209,7 +238,7 @@ adminRouter.patch(
     try {
       if (!(await ensureDepartmentAccess(res, ticketNumber))) return
       const report = await getReportStore().updateReportStatus(ticketNumber, req.body, actor)
-      res.json(report)
+      res.json(presentAdminReport(res, report))
     } catch (error) {
       if (sendStoreError(res, error)) return
       logError('admin', error)
@@ -235,7 +264,7 @@ adminRouter.patch(
     try {
       if (!(await ensureDepartmentAccess(res, ticketNumber))) return
       const report = await getReportStore().updateReportPriority(ticketNumber, req.body, actor)
-      res.json(report)
+      res.json(presentAdminReport(res, report))
     } catch (error) {
       if (sendStoreError(res, error)) return
       logError('admin', error)
@@ -261,7 +290,7 @@ adminRouter.patch(
     }
     try {
       const report = await getReportStore().assignReport(ticketNumber, req.body, actor)
-      res.json(report)
+      res.json(presentAdminReport(res, report))
     } catch (error) {
       if (sendStoreError(res, error)) return
       logError('admin', error)
@@ -272,6 +301,7 @@ adminRouter.patch(
 
 adminRouter.post(
   '/reports/:ticketNumber/notes',
+  requireRole('admin', 'super_admin'),
   validateBody(addNoteSchema),
   asyncHandler(async (req, res) => {
     const actor = actorFrom(res)
@@ -287,7 +317,7 @@ adminRouter.post(
     try {
       if (!(await ensureDepartmentAccess(res, ticketNumber))) return
       const report = await getReportStore().addReportNote(ticketNumber, req.body.note, actor)
-      res.json(report)
+      res.json(presentAdminReport(res, report))
     } catch (error) {
       if (sendStoreError(res, error)) return
       logError('admin', error)
@@ -298,6 +328,7 @@ adminRouter.post(
 
 adminRouter.delete(
   '/reports/:ticketNumber',
+  requireRole('admin', 'super_admin'),
   asyncHandler(async (req, res) => {
     const actor = actorFrom(res)
     if (!actor) {
@@ -329,7 +360,7 @@ adminRouter.get(
         period: typeof req.query.period === 'string' ? req.query.period : undefined,
         range: typeof req.query.range === 'string' ? req.query.range : undefined,
       })
-      const analytics = await getReportStore().getAnalytics(query)
+      const analytics = await getReportStore().getAnalytics(query, staffScope(res))
       res.json(analytics)
     } catch (error) {
       if (sendStoreError(res, error)) return
@@ -469,6 +500,22 @@ adminRouter.get(
   }),
 )
 
+adminRouter.post(
+  '/staff',
+  requireRole('admin', 'super_admin'),
+  validateBody(createStaffSchema),
+  asyncHandler(async (req, res) => {
+    try {
+      const staff = await getReportStore().createStaff(req.body)
+      res.status(201).json({ staff })
+    } catch (error) {
+      if (sendStoreError(res, error)) return
+      logError('admin', error)
+      sendError(res, 500, 'Unable to add that staff account.')
+    }
+  }),
+)
+
 adminRouter.patch(
   '/staff/:userId',
   requireRole('admin', 'super_admin'),
@@ -512,8 +559,14 @@ adminRouter.get(
   asyncHandler(async (req, res) => {
     try {
       const query = parseAccessMapQuery(queryRecord(req.query))
-      const clusters = await getReportStore().listMapAccess(query)
-      res.json({ clusters: clusters.map(toMapAccessCluster) })
+      const [clusters, visits] = await Promise.all([
+        getReportStore().listMapAccess(query),
+        getReportStore().listRecentAccessLogs(query, 50),
+      ])
+      res.json({
+        clusters: clusters.map(toMapAccessCluster),
+        visits: visits.map(toMapAccessVisit),
+      })
     } catch (error) {
       if (sendStoreError(res, error)) return
       logError('admin', error)

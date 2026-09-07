@@ -8,6 +8,7 @@ import {
   currentManilaYear,
   DEPARTMENT_PENDING_STATUSES,
   formatTicketNumber,
+  manilaDateKey,
   normalizePhilippineMobile,
   randomTicketSerial,
   type ReportPriority,
@@ -17,16 +18,20 @@ import { normalizeAccessPage } from '../../shared/map.ts'
 import { buildAnalytics, reporterFingerprint } from '../lib/analytics.ts'
 import {
   DepartmentNotFoundError,
+  DuplicateStaffEmailError,
   filterAdminReports,
   locationFrom,
   asCoordinate,
   paginateAdminReports,
   ReportNotFoundError,
+  resolveAssignedDepartmentId,
   StaffNotFoundError,
   type AdminReportRecord,
 } from '../lib/adminReports.ts'
 import { aggregateAccessLogs, mapFilterAsListQuery } from '../lib/mapAccess.ts'
+import { geocodeKidapawanAddress, reportNeedsSiteGeocode, resolveReportLocation } from '../lib/geocode.ts'
 import { getSupabaseAdminClient } from '../lib/supabase.ts'
+import { fetchAllRows } from '../lib/supabasePage.ts'
 import { photoViewUrl, deletePhotoObject } from '../lib/spaces.ts'
 import {
   CatalogItemNotFoundError,
@@ -60,6 +65,77 @@ function asStatus(value: unknown): ReportStatus {
   return typeof value === 'string' && isReportStatus(value) ? value : 'submitted'
 }
 
+const geocodeSkipIds = new Set<string>()
+
+async function applySiteAddressPin<T extends Record<string, unknown>>(db: SupabaseClient, row: T): Promise<T> {
+  const address = typeof row.address === 'string' ? row.address : ''
+  const latitude = asCoordinate(row.latitude)
+  const longitude = asCoordinate(row.longitude)
+  const locationAccuracy = asCoordinate(row.location_accuracy)
+  if (
+    !reportNeedsSiteGeocode({
+      address,
+      latitude,
+      longitude,
+      location_accuracy: locationAccuracy,
+    }) ||
+    geocodeSkipIds.has(String(row.id))
+  ) {
+    return row
+  }
+
+  const geo = await geocodeKidapawanAddress(address)
+  if (!geo) {
+    geocodeSkipIds.add(String(row.id))
+    return row
+  }
+
+  const now = new Date().toISOString()
+  const { error } = await db
+    .from('reports')
+    .update({
+      latitude: geo.latitude,
+      longitude: geo.longitude,
+      location_accuracy: null,
+      location_captured_at: now,
+    })
+    .eq('id', row.id)
+  if (error) {
+    logError('store', error)
+    return row
+  }
+
+  return {
+    ...row,
+    latitude: geo.latitude,
+    longitude: geo.longitude,
+    location_accuracy: null,
+    location_captured_at: now,
+  }
+}
+
+async function hydrateReportSiteLocations(db: SupabaseClient) {
+  const data = await fetchAllRows<{
+    id: string
+    address: unknown
+    latitude: unknown
+    longitude: unknown
+    location_accuracy: unknown
+  }>((from, to) =>
+    db.from('reports').select('id, address, latitude, longitude, location_accuracy').range(from, to),
+  )
+  const needing = data.filter(
+    (row) =>
+      reportNeedsSiteGeocode({
+        address: typeof row.address === 'string' ? row.address : '',
+        latitude: asCoordinate(row.latitude),
+        longitude: asCoordinate(row.longitude),
+        location_accuracy: asCoordinate(row.location_accuracy),
+      }) && !geocodeSkipIds.has(row.id),
+  )
+  await Promise.all(needing.slice(0, 8).map((row) => applySiteAddressPin(db, row)))
+}
+
 function asPriority(value: unknown): ReportPriority {
   return typeof value === 'string' && isReportPriority(value) ? value : 'medium'
 }
@@ -81,18 +157,16 @@ function toCatalogRow(row: Record<string, unknown>, usageCount: number, pendingC
 }
 
 async function usageCounts(db: SupabaseClient, column: 'category_id' | 'assigned_department_id') {
-  const { data, error } = await db.from('reports').select(`${column}, status`)
+  const data = await fetchAllRows<Record<string, unknown>>((from, to) =>
+    db.from('reports').select(`${column}, status`).range(from, to),
+  )
   const counts = new Map<string, number>()
   const pending = new Map<string, number>()
-  if (error) {
-    logError('store', error)
-    return { counts, pending }
-  }
-  for (const row of data ?? []) {
-    const id = (row as Record<string, unknown>)[column]
+  for (const row of data) {
+    const id = row[column]
     if (typeof id !== 'string') continue
     counts.set(id, (counts.get(id) ?? 0) + 1)
-    const status = (row as Record<string, unknown>).status
+    const status = row.status
     if (typeof status === 'string' && DEPARTMENT_PENDING_STATUSES.includes(status as ReportStatus)) {
       pending.set(id, (pending.get(id) ?? 0) + 1)
     }
@@ -102,6 +176,20 @@ async function usageCounts(db: SupabaseClient, column: 'category_id' | 'assigned
 
 function isUniqueViolation(error: { code?: string } | null) {
   return error?.code === '23505'
+}
+
+async function findAuthUserByEmail(db: SupabaseClient, email: string) {
+  for (let page = 1; page <= 10; page += 1) {
+    const { data, error } = await db.auth.admin.listUsers({ page, perPage: 200 })
+    if (error) {
+      logError('store', error)
+      throw new Error('STORAGE_UNAVAILABLE')
+    }
+    const found = data.users.find((user) => user.email?.toLowerCase() === email)
+    if (found) return found
+    if (data.users.length < 200) return null
+  }
+  return null
 }
 
 export function createSupabaseStore(): ReportStore | null {
@@ -142,6 +230,7 @@ export function createSupabaseStore(): ReportStore | null {
       longitude: asCoordinate(row.longitude),
       assigned_department_id: typeof row.assigned_department_id === 'string' ? row.assigned_department_id : null,
       assigned_department_name: asName(row.departments),
+      department_assigned_at: typeof row.department_assigned_at === 'string' ? row.department_assigned_at : null,
       assigned_admin_id: assignedAdminId,
       assigned_admin_name: assignedAdminId ? names.get(assignedAdminId) ?? null : null,
       created_at: row.created_at as string,
@@ -225,7 +314,7 @@ export function createSupabaseStore(): ReportStore | null {
     const { data, error } = await db
       .from('reports')
       .select(
-        'id, ticket_number, title, description, status, priority, created_at, updated_at, latitude, longitude, location_accuracy, location_captured_at, assigned_department_id, assigned_admin_id, category_id, full_name, birth_date, gender, address, phone, email, report_categories ( name ), departments ( name )',
+        'id, ticket_number, title, description, status, priority, created_at, updated_at, latitude, longitude, location_accuracy, location_captured_at, assigned_department_id, department_assigned_at, assigned_admin_id, category_id, full_name, birth_date, gender, address, phone, email, report_categories ( name ), departments ( name )',
       )
       .eq('ticket_number', ticketNumber)
       .maybeSingle()
@@ -236,8 +325,9 @@ export function createSupabaseStore(): ReportStore | null {
     }
     if (!data) throw new ReportNotFoundError()
 
-    const names = await profileNames(typeof data.assigned_admin_id === 'string' ? [data.assigned_admin_id] : [])
-    const record = toRecord(data as Record<string, unknown>, names)
+    const pinned = await applySiteAddressPin(db, data as Record<string, unknown>)
+    const names = await profileNames(typeof pinned.assigned_admin_id === 'string' ? [pinned.assigned_admin_id] : [])
+    const record = toRecord(pinned, names)
     const [history, notes, photos] = await Promise.all([
       loadHistory(record.id),
       loadNotes(record.id),
@@ -264,11 +354,13 @@ export function createSupabaseStore(): ReportStore | null {
       location: locationFrom({
         latitude: record.latitude,
         longitude: record.longitude,
-        location_accuracy: asCoordinate(data.location_accuracy),
-        location_captured_at: typeof data.location_captured_at === 'string' ? data.location_captured_at : null,
+        location_accuracy: asCoordinate(pinned.location_accuracy),
+        location_captured_at:
+          typeof pinned.location_captured_at === 'string' ? pinned.location_captured_at : null,
       }),
       assigned_department_id: record.assigned_department_id,
       assigned_department_name: record.assigned_department_name,
+      department_assigned_at: record.department_assigned_at,
       assigned_admin_id: record.assigned_admin_id,
       assigned_admin_name: record.assigned_admin_name,
       created_at: record.created_at,
@@ -317,7 +409,7 @@ export function createSupabaseStore(): ReportStore | null {
       }
 
       const now = new Date().toISOString()
-      const location = input.location ?? null
+      const location = await resolveReportLocation(input.address, input.location)
       const insertPayload = {
         full_name: combinePersonName(input.first_name, input.last_name),
         birth_date: input.birth_date,
@@ -423,21 +515,24 @@ export function createSupabaseStore(): ReportStore | null {
       }
     },
 
-    async getAnalytics(query) {
-      const { data, error } = await db
-        .from('reports')
-        .select('status, phone, created_at, latitude, longitude, gender, birth_date, assigned_department_id, report_categories ( name ), departments ( name )')
+    async getAnalytics(query, departmentId) {
+      const data = await fetchAllRows<Record<string, unknown>>((from, to) => {
+        let request = db
+          .from('reports')
+          .select(
+            'status, phone, created_at, latitude, longitude, gender, birth_date, assigned_department_id, report_categories ( name ), departments ( name )',
+          )
+        if (departmentId) request = request.eq('assigned_department_id', departmentId)
+        return request.range(from, to)
+      })
 
-      if (error) {
-        logError('store', error)
-        throw new Error('STORAGE_UNAVAILABLE')
-      }
-
-      const rows = (data ?? []).map((row) => {
+      const rows = data.map((row) => {
         const phone = typeof row.phone === 'string' ? row.phone : ''
+        const assigned = typeof row.assigned_department_id === 'string' ? row.assigned_department_id : null
         return {
           status: asStatus(row.status),
           categoryName: asName(row.report_categories) ?? 'Other',
+          departmentId: assigned,
           departmentName: asName(row.departments),
           reporterKey: reporterFingerprint(phone),
           createdAt: row.created_at as string,
@@ -451,23 +546,20 @@ export function createSupabaseStore(): ReportStore | null {
     },
 
     async listAdminReports(query) {
-      const { data, error } = await db
-        .from('reports')
-        .select(
-          'id, ticket_number, title, description, status, priority, created_at, updated_at, latitude, longitude, assigned_department_id, assigned_admin_id, category_id, report_categories ( name ), departments ( name )',
-        )
+      const data = await fetchAllRows<Record<string, unknown>>((from, to) =>
+        db
+          .from('reports')
+          .select(
+            'id, ticket_number, title, description, status, priority, created_at, updated_at, latitude, longitude, assigned_department_id, department_assigned_at, assigned_admin_id, category_id, report_categories ( name ), departments ( name )',
+          )
+          .range(from, to),
+      )
 
-      if (error) {
-        logError('store', error)
-        throw new Error('STORAGE_UNAVAILABLE')
-      }
-
-      const rows = data ?? []
       const names = await profileNames(
-        rows.map((row) => (typeof row.assigned_admin_id === 'string' ? row.assigned_admin_id : '')),
+        data.map((row) => (typeof row.assigned_admin_id === 'string' ? row.assigned_admin_id : '')),
       )
       return paginateAdminReports(
-        rows.map((row) => toRecord(row as Record<string, unknown>, names)),
+        data.map((row) => toRecord(row, names)),
         query,
       )
     },
@@ -519,44 +611,60 @@ export function createSupabaseStore(): ReportStore | null {
       return loadDetail(ticketNumber)
     },
 
-    async assignReport(ticketNumber, input, _actor) {
+    async assignReport(ticketNumber, input, actor) {
       const current = await loadDetail(ticketNumber)
-      const patch: Record<string, unknown> = { updated_at: new Date().toISOString() }
+      const now = new Date().toISOString()
+      const patch: Record<string, unknown> = { updated_at: now }
+      let assignedDepartmentName: string | null = current.assigned_department_name
+      let departmentChanged = false
 
-      if (input.department_id !== undefined) {
-        if (input.department_id === null) {
+      let staffDepartmentId: string | null | undefined
+      if (input.admin_id) {
+        const { data: profile, error } = await db
+          .from('profiles')
+          .select('user_id, role, department_id')
+          .eq('user_id', input.admin_id)
+          .maybeSingle()
+        if (error) {
+          logError('store', error)
+          throw new Error('STORAGE_UNAVAILABLE')
+        }
+        const role = typeof profile?.role === 'string' ? profile.role : ''
+        if (!profile || !isAdminRole(role)) throw new StaffNotFoundError()
+        patch.assigned_admin_id = profile.user_id
+        staffDepartmentId =
+          typeof (profile as { department_id?: unknown }).department_id === 'string'
+            ? (profile as { department_id: string }).department_id
+            : null
+      } else if (input.admin_id === null) {
+        patch.assigned_admin_id = null
+      }
+
+      const departmentId = resolveAssignedDepartmentId(input.department_id, staffDepartmentId)
+
+      if (departmentId !== undefined) {
+        if (departmentId === null) {
           patch.assigned_department_id = null
+          patch.department_assigned_at = null
+          departmentChanged = Boolean(current.assigned_department_id)
         } else {
           const { data: department, error } = await db
             .from('departments')
-            .select('id, is_active')
-            .eq('id', input.department_id)
+            .select('id, name, is_active')
+            .eq('id', departmentId)
             .maybeSingle()
           if (error) {
             logError('store', error)
             throw new Error('STORAGE_UNAVAILABLE')
           }
           if (!department || department.is_active === false) throw new DepartmentNotFoundError()
+          departmentChanged = current.assigned_department_id !== department.id
           patch.assigned_department_id = department.id
-        }
-      }
-
-      if (input.admin_id !== undefined) {
-        if (input.admin_id === null) {
-          patch.assigned_admin_id = null
-        } else {
-          const { data: profile, error } = await db
-            .from('profiles')
-            .select('user_id, role')
-            .eq('user_id', input.admin_id)
-            .maybeSingle()
-          if (error) {
-            logError('store', error)
-            throw new Error('STORAGE_UNAVAILABLE')
+          assignedDepartmentName = typeof department.name === 'string' ? department.name : 'department'
+          if (departmentChanged) {
+            patch.department_assigned_at = now
+            if (current.status === 'submitted') patch.status = 'received'
           }
-          const role = typeof profile?.role === 'string' ? profile.role : ''
-          if (!profile || !isAdminRole(role)) throw new StaffNotFoundError()
-          patch.assigned_admin_id = profile.user_id
         }
       }
 
@@ -565,6 +673,30 @@ export function createSupabaseStore(): ReportStore | null {
         logError('store', updateError)
         throw new Error('STORAGE_UNAVAILABLE')
       }
+
+      if (departmentChanged && departmentId) {
+        const office = assignedDepartmentName ?? 'department'
+        if (current.status === 'submitted') {
+          const { error: historyError } = await db.from('report_status_history').insert({
+            report_id: current.id,
+            previous_status: current.status,
+            new_status: 'received',
+            note: `Assigned to ${office}. That office can now act on this ticket.`,
+            changed_by: actor.userId,
+            created_at: now,
+          })
+          if (historyError) logError('store', historyError)
+        } else {
+          const { error: noteError } = await db.from('report_notes').insert({
+            report_id: current.id,
+            admin_id: actor.userId,
+            note: `Assigned to ${office}. Days with department start from this assignment.`,
+            created_at: now,
+          })
+          if (noteError) logError('store', noteError)
+        }
+      }
+
       return loadDetail(ticketNumber)
     },
 
@@ -854,6 +986,70 @@ export function createSupabaseStore(): ReportStore | null {
       }
     },
 
+    async createStaff(input) {
+      const { data: department, error: departmentError } = await db
+        .from('departments')
+        .select('id, name, is_active')
+        .eq('id', input.department_id)
+        .maybeSingle()
+      if (departmentError) {
+        logError('store', departmentError)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+      if (!department || department.is_active === false) throw new DepartmentNotFoundError()
+
+      const email = input.email.trim().toLowerCase()
+      const existing = await findAuthUserByEmail(db, email)
+      if (existing) throw new DuplicateStaffEmailError()
+
+      const created = await db.auth.admin.createUser({
+        email,
+        password: input.password,
+        email_confirm: true,
+        user_metadata: { full_name: input.full_name.trim() },
+      })
+      if (created.error || !created.data.user) {
+        const message = created.error?.message?.toLowerCase() ?? ''
+        if (message.includes('already') || message.includes('registered') || message.includes('exists')) {
+          throw new DuplicateStaffEmailError()
+        }
+        logError('store', created.error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+
+      const userId = created.data.user.id
+      const now = new Date().toISOString()
+      const { data, error } = await db
+        .from('profiles')
+        .upsert(
+          {
+            user_id: userId,
+            full_name: input.full_name.trim(),
+            role: input.role,
+            department_id: input.department_id,
+            updated_at: now,
+          },
+          { onConflict: 'user_id' },
+        )
+        .select('user_id, full_name, role, department_id')
+        .single()
+
+      if (error || !data) {
+        await db.auth.admin.deleteUser(userId)
+        if (isUniqueViolation(error)) throw new DuplicateStaffEmailError()
+        logError('store', error)
+        throw new Error('STORAGE_UNAVAILABLE')
+      }
+
+      return {
+        user_id: data.user_id as string,
+        full_name: data.full_name as string,
+        role: input.role,
+        department_id: input.department_id,
+        department_name: typeof department.name === 'string' ? department.name : null,
+      }
+    },
+
     async createAccessLog(input) {
       const cutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString()
       const { data: existing, error: existingError } = await db
@@ -868,15 +1064,22 @@ export function createSupabaseStore(): ReportStore | null {
       }
       if (existing && existing.length > 0) return
 
-      const { error } = await db.from('access_logs').insert({
+      const payload = {
         session_id: input.session_id,
-        latitude: input.latitude,
-        longitude: input.longitude,
+        latitude: input.latitude ?? null,
+        longitude: input.longitude ?? null,
         accuracy: input.accuracy ?? null,
         page: normalizeAccessPage(input.page),
         user_agent: input.user_agent,
+        ip_address: input.ip_address ?? null,
         created_at: new Date().toISOString(),
-      })
+      }
+      let { error } = await db.from('access_logs').insert(payload)
+      if (error && 'ip_address' in payload) {
+        const { ip_address: _ip, ...withoutIp } = payload
+        const retry = await db.from('access_logs').insert(withoutIp)
+        error = retry.error
+      }
       if (error) {
         logError('store', error)
         throw new Error('STORAGE_UNAVAILABLE')
@@ -884,25 +1087,26 @@ export function createSupabaseStore(): ReportStore | null {
     },
 
     async listMapReports(query) {
-      const { data, error } = await db
-        .from('reports')
-        .select(
-          'id, ticket_number, title, description, status, priority, created_at, updated_at, latitude, longitude, assigned_department_id, assigned_admin_id, category_id, report_categories ( name ), departments ( name )',
-        )
-        .not('latitude', 'is', null)
-        .not('longitude', 'is', null)
+      await hydrateReportSiteLocations(db)
+      const data = await fetchAllRows<Record<string, unknown>>((from, to) =>
+        db
+          .from('reports')
+          .select(
+            'id, ticket_number, title, description, status, priority, created_at, updated_at, latitude, longitude, address, assigned_department_id, department_assigned_at, assigned_admin_id, category_id, report_categories ( name ), departments ( name )',
+          )
+          .not('latitude', 'is', null)
+          .not('longitude', 'is', null)
+          .range(from, to),
+      )
 
-      if (error) {
-        logError('store', error)
-        throw new Error('STORAGE_UNAVAILABLE')
-      }
-
-      const rows = data ?? []
       const names = await profileNames(
-        rows.map((row) => (typeof row.assigned_admin_id === 'string' ? row.assigned_admin_id : '')),
+        data.map((row) => (typeof row.assigned_admin_id === 'string' ? row.assigned_admin_id : '')),
+      )
+      const addresses = new Map(
+        data.map((row) => [String(row.ticket_number ?? ''), typeof row.address === 'string' ? row.address : '']),
       )
       return filterAdminReports(
-        rows.map((row) => toRecord(row as Record<string, unknown>, names)),
+        data.map((row) => toRecord(row, names)),
         mapFilterAsListQuery(query),
       )
         .filter((record) => record.latitude != null && record.longitude != null)
@@ -914,23 +1118,55 @@ export function createSupabaseStore(): ReportStore | null {
           created_at: record.created_at,
           latitude: record.latitude as number,
           longitude: record.longitude as number,
+          address: addresses.get(record.ticket_number) ?? '',
         }))
     },
 
     async listMapAccess(query) {
-      const { data, error } = await db.from('access_logs').select('latitude, longitude, created_at')
-      if (error) {
-        logError('store', error)
-        throw new Error('STORAGE_UNAVAILABLE')
-      }
+      const data = await fetchAllRows<{
+        latitude: unknown
+        longitude: unknown
+        created_at: unknown
+        ip_address: unknown
+      }>((from, to) =>
+        db.from('access_logs').select('latitude, longitude, created_at, ip_address').range(from, to),
+      )
       return aggregateAccessLogs(
-        (data ?? []).map((row) => ({
-          latitude: Number(row.latitude),
-          longitude: Number(row.longitude),
+        data.map((row) => ({
+          latitude: row.latitude == null ? null : Number(row.latitude),
+          longitude: row.longitude == null ? null : Number(row.longitude),
           createdAt: row.created_at as string,
+          ipAddress: typeof row.ip_address === 'string' ? row.ip_address : null,
         })),
         query,
       )
+    },
+
+    async listRecentAccessLogs(query, limit = 50) {
+      const data = await fetchAllRows<{
+        latitude: unknown
+        longitude: unknown
+        created_at: unknown
+        ip_address: unknown
+        page: unknown
+      }>((from, to) =>
+        db.from('access_logs').select('latitude, longitude, created_at, ip_address, page').order('created_at', { ascending: false }).range(from, to),
+      )
+      return data
+        .filter((row) => {
+          const createdAt = String(row.created_at ?? '')
+          if (query.date_from && manilaDateKey(createdAt) < query.date_from) return false
+          if (query.date_to && manilaDateKey(createdAt) > query.date_to) return false
+          return true
+        })
+        .slice(0, limit)
+        .map((row) => ({
+          created_at: String(row.created_at ?? ''),
+          page: typeof row.page === 'string' ? row.page : '/',
+          ip_address: typeof row.ip_address === 'string' ? row.ip_address : null,
+          latitude: row.latitude == null ? null : Number(row.latitude),
+          longitude: row.longitude == null ? null : Number(row.longitude),
+        }))
     },
 
     async listFacebookIntakes(status) {

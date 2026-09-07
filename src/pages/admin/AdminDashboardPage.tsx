@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/Label'
 import { Select } from '@/components/ui/Select'
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table'
 import { Card, CardBody, CardHeader, CardTitle } from '@/components/ui/Card'
+import { AnalyticsExtendedCharts } from '@/features/admin/AnalyticsExtendedCharts'
 import { DashboardCharts } from '@/features/admin/DashboardCharts'
 import { StatCard } from '@/features/admin/StatCard'
 import { fetchAnalytics } from '@/features/admin/analyticsApi'
@@ -24,6 +25,7 @@ import type { CatalogItem } from '@shared/catalog'
 
 export function AdminDashboardPage() {
   const { profile } = useAuth()
+  const staffDepartmentId = profile?.role === 'staff' ? profile.departmentId : null
   const [period, setPeriod] = useState<AnalyticsPeriod>('monthly')
   const [range, setRange] = useState<AnalyticsRange>('all')
   const [data, setData] = useState<AnalyticsResponse | null>(null)
@@ -60,22 +62,63 @@ export function AdminDashboardPage() {
   }, [period, range])
 
   const totals = data?.totals
+  const departmentRows = (() => {
+    const pendingById = new Map(
+      (data?.pending_by_department ?? []).filter((item) => item.id).map((item) => [item.id as string, item.count]),
+    )
+    const reportsById = new Map(
+      (data?.departments ?? []).filter((item) => item.id).map((item) => [item.id as string, item.count]),
+    )
+    const rows = departments
+      .filter((item) => !staffDepartmentId || item.id === staffDepartmentId)
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        pending: pendingById.get(item.id) ?? 0,
+        reports: reportsById.get(item.id) ?? 0,
+      }))
+    for (const item of data?.departments ?? []) {
+      if (!item.id || (staffDepartmentId && item.id !== staffDepartmentId)) continue
+      if (rows.some((row) => row.id === item.id)) continue
+      rows.push({
+        id: item.id,
+        name: item.name,
+        pending: pendingById.get(item.id) ?? 0,
+        reports: item.count,
+      })
+    }
+    if (!staffDepartmentId) {
+      const unassignedPending = data?.pending_by_department?.find((item) => !item.id)?.count ?? 0
+      const unassignedReports = data?.departments?.find((item) => !item.id)?.count ?? 0
+      if (unassignedPending > 0 || unassignedReports > 0) {
+        rows.unshift({
+          id: '',
+          name: 'Unassigned',
+          pending: unassignedPending,
+          reports: unassignedReports,
+        })
+      }
+    }
+    return rows.sort((left, right) => right.pending - left.pending || right.reports - left.reports || left.name.localeCompare(right.name))
+  })()
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <h1 className="font-display text-3xl font-semibold">Dashboard</h1>
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <h1 className="font-display text-2xl font-semibold sm:text-3xl">Dashboard</h1>
           <p className="mt-1 text-sm text-ink-500">
-            Overview of civic reports for Kidapawan City, including gender, age groups, and rounded
-          locations. Personal information is never shown in these charts.{' '}
+            <span className="hidden md:inline">
+              Overview of civic reports for Kidapawan City. Cards and charts use the same tickets in the
+              selected date range. Personal information is never shown.{' '}
+            </span>
             <Link className="font-semibold text-pine-800 hover:underline" to="/admin/analytics">
               Open full analytics
             </Link>
           </p>
         </div>
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <div className="sm:w-44">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:w-auto sm:gap-3">
+          <div className="min-w-0 sm:w-44">
             <Label htmlFor="range">Date range</Label>
             <Select
               id="range"
@@ -90,7 +133,7 @@ export function AdminDashboardPage() {
               ))}
             </Select>
           </div>
-          <div className="sm:w-40">
+          <div className="min-w-0 sm:w-40">
             <Label htmlFor="period">Group by</Label>
             <Select
               id="period"
@@ -114,21 +157,31 @@ export function AdminDashboardPage() {
         </p>
       ) : null}
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        <StatCard label="Total Reports" value={totals?.total} loading={loading} />
+      <div className="grid grid-cols-4 gap-2 sm:gap-4">
+        <StatCard compact label="In progress" value={totals?.in_progress} loading={loading} />
+        <StatCard compact label="Resolved" value={totals?.resolved} loading={loading} />
+        <StatCard compact label="Closed" value={totals?.closed} loading={loading} />
+        <StatCard compact label="Rejected" value={totals?.rejected} loading={loading} />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Total reports" value={totals?.total} hint="Tickets created in this date range" loading={loading} />
         <StatCard
-          label="Pending Reports"
+          label="Pending"
           value={totals?.pending}
-          hint="Submitted, received, and under review"
+          hint="Submitted, received, under review, and in progress"
           loading={loading}
         />
-        <StatCard label="In Progress" value={totals?.in_progress} loading={loading} />
-        <StatCard label="Resolved" value={totals?.resolved} loading={loading} />
-        <StatCard label="Closed" value={totals?.closed} loading={loading} />
         <StatCard
-          label="Total Reporting Users"
-          value={totals?.reporting_users}
-          hint="Unique residents, all time"
+          label="Reporting users"
+          value={data?.users.total}
+          hint="Unique residents in this date range"
+          loading={loading}
+        />
+        <StatCard
+          label="Unassigned"
+          value={totals?.unassigned}
+          hint="Tickets in this range with no department"
           loading={loading}
         />
       </div>
@@ -140,7 +193,7 @@ export function AdminDashboardPage() {
         <CardBody>
           {loading ? (
             <p className="text-sm text-ink-500">Loading department queues…</p>
-          ) : departments.length === 0 ? (
+          ) : departmentRows.length === 0 ? (
             <p className="text-sm text-ink-500">No departments yet.</p>
           ) : (
             <Table>
@@ -148,36 +201,40 @@ export function AdminDashboardPage() {
                 <TR>
                   <TH>Department</TH>
                   <TH>Pending</TH>
-                  <TH>Assigned</TH>
+                  <TH>Reports</TH>
                 </TR>
               </THead>
               <TBody>
-                {departments
-                  .filter((item) => !profile?.departmentId || item.id === profile.departmentId)
-                  .sort((left, right) => (right.pending_count ?? 0) - (left.pending_count ?? 0))
-                  .map((item) => (
-                    <TR key={item.id}>
-                      <TD className="font-medium">
+                {departmentRows.map((item) => (
+                  <TR key={item.id || 'unassigned'}>
+                    <TD className="font-medium">
+                      {item.id ? (
                         <Link className="text-pine-800 hover:underline" to={`/admin/reports?department_id=${item.id}`}>
                           {item.name}
                         </Link>
-                      </TD>
-                      <TD className={(item.pending_count ?? 0) > 0 ? 'font-semibold text-earth-700' : 'text-ink-500'}>
-                        {formatCount(item.pending_count ?? 0)}
-                      </TD>
-                      <TD>{formatCount(item.usage_count)}</TD>
-                    </TR>
-                  ))}
+                      ) : (
+                        item.name
+                      )}
+                    </TD>
+                    <TD className={item.pending > 0 ? 'font-semibold text-earth-700' : 'text-ink-500'}>
+                      {formatCount(item.pending)}
+                    </TD>
+                    <TD>{formatCount(item.reports)}</TD>
+                  </TR>
+                ))}
               </TBody>
             </Table>
           )}
           <p className="mt-3 text-xs text-ink-500">
-            Pending includes submitted, received, under review, and in progress tickets assigned to that department.
+            Pending and reports both use tickets created in the selected date range. Pending is the open
+            queue: submitted, received, under review, and in progress. Those pending counts match the
+            department chart.
           </p>
         </CardBody>
       </Card>
 
       <DashboardCharts data={data} loading={loading} />
+      <AnalyticsExtendedCharts data={data} loading={loading} />
     </div>
   )
 }

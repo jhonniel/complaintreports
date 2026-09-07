@@ -507,7 +507,7 @@ export function AdminFacebookPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-3xl font-semibold">Facebook intake</h1>
+        <h1 className="font-display text-2xl font-semibold sm:text-3xl">Facebook intake</h1>
         <p className="mt-1 text-sm text-ink-500">
           Paste a public Page post to import every comment as a ticket in Reports. Private Messenger chats are not
           imported.

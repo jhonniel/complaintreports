@@ -72,7 +72,13 @@ async function loadProfile(userId: string, email: string | null): Promise<AuthPr
     .eq('user_id', userId)
     .maybeSingle()
 
-  let row = data
+  let row: {
+    id: unknown
+    user_id: unknown
+    full_name: unknown
+    role: unknown
+    department_id?: unknown
+  } | null = data
   let lookupError = error
   if (lookupError) {
     const fallback = await supabase

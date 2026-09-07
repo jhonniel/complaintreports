@@ -51,6 +51,7 @@ export interface AnalyticsUsers {
 export interface NamedCount {
   name: string
   count: number
+  id?: string | null
 }
 
 export interface StatusCount {
@@ -59,17 +60,17 @@ export interface StatusCount {
   count: number
 }
 
-export interface AnalyticsGeography {
-  with_location: number
-  without_location: number
-  areas: GeoAreaCount[]
-}
-
 export interface GeoAreaCount {
   latitude: number
   longitude: number
   count: number
   label: string
+}
+
+export interface AnalyticsGeography {
+  with_location: number
+  without_location: number
+  areas: GeoAreaCount[]
 }
 
 export interface AnalyticsDemographics {
@@ -88,17 +89,4 @@ export interface AnalyticsResponse {
   pending_by_department: NamedCount[]
   geography: AnalyticsGeography
   demographics: AnalyticsDemographics
-}
-
-export interface AnalyticsGeography {
-  with_location: number
-  without_location: number
-  areas: GeoAreaCount[]
-}
-
-export interface GeoAreaCount {
-  latitude: number
-  longitude: number
-  count: number
-  label: string
 }

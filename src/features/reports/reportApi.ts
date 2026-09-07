@@ -1,8 +1,19 @@
 import type { CreateReportResponse, PublicCategory, PublicTrackView } from '@shared/report'
+import type { SitePlace } from '@shared/siteAddress'
 import { ApiError, api } from '@/services/api'
 
 export function fetchCategories() {
   return api.get<{ categories: PublicCategory[] }>('/categories')
+}
+
+export function reverseGeocode(latitude: number, longitude: number) {
+  return api.post<SitePlace>('/geocode/reverse', { latitude, longitude })
+}
+
+export async function suggestSitePlaces(query: string, signal?: AbortSignal) {
+  const params = new URLSearchParams({ q: query })
+  const response = await api.get<{ suggestions: SitePlace[] }>(`/geocode/suggest?${params.toString()}`, { signal })
+  return response.suggestions
 }
 
 export function submitReport(payload: unknown) {

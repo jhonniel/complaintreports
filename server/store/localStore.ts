@@ -21,6 +21,7 @@ import {
   isGender,
   isReportPriority,
   isReportStatus,
+  manilaDateKey,
   combinePersonName,
   normalizePhilippineMobile,
   randomTicketSerial,
@@ -30,14 +31,16 @@ import {
   type ReportStatus,
 } from '../../shared/report.ts'
 import { buildAnalytics, reporterFingerprint } from '../lib/analytics.ts'
-import { geocodeKidapawanAddress } from '../lib/geocode.ts'
+import { geocodeKidapawanAddress, reportNeedsSiteGeocode, resolveReportLocation } from '../lib/geocode.ts'
 import { deletePhotoObject, photoViewUrl } from '../lib/spaces.ts'
 import {
   DepartmentNotFoundError,
+  DuplicateStaffEmailError,
   filterAdminReports,
   locationFrom,
   paginateAdminReports,
   ReportNotFoundError,
+  resolveAssignedDepartmentId,
   StaffNotFoundError,
   type AdminReportRecord,
 } from '../lib/adminReports.ts'
@@ -80,6 +83,7 @@ interface LocalStaff {
   full_name: string
   role: string
   department_id?: string | null
+  email?: string | null
 }
 
 interface LocalReport {
@@ -103,6 +107,7 @@ interface LocalReport {
   assigned_department_id: string | null
   assigned_admin_id: string | null
   assigned_admin_name?: string | null
+  department_assigned_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -130,11 +135,12 @@ interface LocalNote {
 interface LocalAccessLog {
   id: string
   session_id: string
-  latitude: number
-  longitude: number
+  latitude: number | null
+  longitude: number | null
   accuracy: number | null
   page: string
   user_agent: string | null
+  ip_address: string | null
   created_at: string
 }
 
@@ -249,39 +255,43 @@ function seedAccessLogs(): LocalAccessLog[] {
       session_id: 'session-demo-access-001',
       latitude: 7.0083,
       longitude: 125.0894,
-      accuracy: 25,
+      accuracy: 25000,
       page: '/',
       user_agent: null,
+      ip_address: '127.0.0.1',
       created_at: now,
     },
     {
       id: 'aaaaaaa1-aaaa-4aaa-8aaa-aaaaaaaaaaa2',
       session_id: 'session-demo-access-002',
-      latitude: 7.0081,
-      longitude: 125.0896,
-      accuracy: 40,
+      latitude: 7.1907,
+      longitude: 125.4553,
+      accuracy: 25000,
       page: '/submit',
       user_agent: null,
+      ip_address: '203.177.10.12',
       created_at: now,
     },
     {
       id: 'aaaaaaa1-aaaa-4aaa-8aaa-aaaaaaaaaaa3',
       session_id: 'session-demo-access-003',
-      latitude: 7.0152,
-      longitude: 125.0961,
-      accuracy: 35,
+      latitude: 10.3157,
+      longitude: 123.8854,
+      accuracy: 25000,
       page: '/track',
       user_agent: null,
+      ip_address: '112.198.64.20',
       created_at: now,
     },
     {
       id: 'aaaaaaa1-aaaa-4aaa-8aaa-aaaaaaaaaaa4',
       session_id: 'session-demo-access-004',
-      latitude: 6.9994,
-      longitude: 125.0788,
-      accuracy: 50,
+      latitude: 14.5995,
+      longitude: 120.9842,
+      accuracy: 25000,
       page: '/',
       user_agent: null,
+      ip_address: '49.147.88.41',
       created_at: now,
     },
   ]
@@ -334,38 +344,50 @@ async function writeDatabase(database: LocalDatabase) {
 
 const geocodeSkipIds = new Set<string>()
 
+async function applyLocalSiteAddressPin(report: LocalReport) {
+  if (
+    !reportNeedsSiteGeocode({
+      address: report.address,
+      latitude: report.latitude,
+      longitude: report.longitude,
+      location_accuracy: report.location_accuracy,
+    }) ||
+    geocodeSkipIds.has(report.id)
+  ) {
+    return false
+  }
+  const geo = await geocodeKidapawanAddress(report.address)
+  if (!geo) {
+    geocodeSkipIds.add(report.id)
+    return false
+  }
+  report.latitude = geo.latitude
+  report.longitude = geo.longitude
+  report.location_accuracy = null
+  report.location_captured_at = new Date().toISOString()
+  return true
+}
+
 async function hydrateMissingMapLocations() {
   return withLock(async () => {
     const database = await readDatabase()
     const missing = database.reports.filter(
       (report) =>
-        (report.latitude == null || report.longitude == null) &&
-        report.address.trim().length > 3 &&
-        !geocodeSkipIds.has(report.id),
+        reportNeedsSiteGeocode({
+          address: report.address,
+          latitude: report.latitude,
+          longitude: report.longitude,
+          location_accuracy: report.location_accuracy,
+        }) && !geocodeSkipIds.has(report.id),
     )
     if (missing.length === 0) return
 
-    const results = await Promise.all(
-      missing.slice(0, 8).map(async (report) => ({
-        id: report.id,
-        geo: await geocodeKidapawanAddress(report.address),
-      })),
-    )
-
     let changed = false
-    const now = new Date().toISOString()
-    for (const { id, geo } of results) {
-      const report = database.reports.find((entry) => entry.id === id)
-      if (!report) continue
-      if (!geo) {
-        geocodeSkipIds.add(id)
-        continue
-      }
-      report.latitude = geo.latitude
-      report.longitude = geo.longitude
-      report.location_captured_at = now
-      changed = true
-    }
+    await Promise.all(
+      missing.slice(0, 8).map(async (report) => {
+        if (await applyLocalSiteAddressPin(report)) changed = true
+      }),
+    )
     if (changed) await writeDatabase(database)
   })
 }
@@ -399,6 +421,8 @@ function toRecord(database: LocalDatabase, report: LocalReport): AdminReportReco
     longitude: report.longitude,
     assigned_department_id: report.assigned_department_id,
     assigned_department_name: department?.name ?? null,
+    department_assigned_at: report.department_assigned_at
+      ?? (report.assigned_department_id ? report.updated_at : null),
     assigned_admin_id: report.assigned_admin_id,
     assigned_admin_name: staff?.full_name ?? report.assigned_admin_name ?? null,
     created_at: report.created_at,
@@ -472,6 +496,7 @@ async function toDetail(database: LocalDatabase, report: LocalReport): Promise<A
     location: locationFrom(report),
     assigned_department_id: record.assigned_department_id,
     assigned_department_name: record.assigned_department_name,
+    department_assigned_at: record.department_assigned_at,
     assigned_admin_id: record.assigned_admin_id,
     assigned_admin_name: record.assigned_admin_name,
     created_at: record.created_at,
@@ -535,6 +560,11 @@ function applyCatalogUpdate<T extends { name: string; description: string | null
   if (input.is_active !== undefined) entry.is_active = input.is_active
 }
 
+async function withSitePin(input: CreateReportInput): Promise<CreateReportInput> {
+  const siteLocation = await resolveReportLocation(input.address, input.location)
+  return { ...input, location: siteLocation ?? undefined }
+}
+
 function insertLocalReport(
   database: LocalDatabase,
   input: CreateReportInput,
@@ -585,6 +615,7 @@ function insertLocalReport(
     assigned_department_id: null,
     assigned_admin_id: null,
     assigned_admin_name: null,
+    department_assigned_at: null,
     created_at: now,
     updated_at: now,
   }
@@ -659,24 +690,27 @@ export const localStore: ReportStore = {
     }
   },
 
-  async getAnalytics(query) {
+  async getAnalytics(query, departmentId) {
     const database = await readDatabase()
-    const rows = database.reports.map((report) => {
-      const department = report.assigned_department_id
-        ? database.departments.find((entry) => entry.id === report.assigned_department_id)
-        : undefined
-      return {
-        status: reportStatus(report.status),
-        categoryName: database.categories.find((category) => category.id === report.category_id)?.name ?? 'Other',
-        departmentName: department?.name ?? null,
-        reporterKey: reporterFingerprint(report.phone),
-        createdAt: report.created_at,
-        latitude: report.latitude,
-        longitude: report.longitude,
-        gender: report.gender,
-        birthDate: report.birth_date,
-      }
-    })
+    const rows = database.reports
+      .filter((report) => !departmentId || report.assigned_department_id === departmentId)
+      .map((report) => {
+        const department = report.assigned_department_id
+          ? database.departments.find((entry) => entry.id === report.assigned_department_id)
+          : undefined
+        return {
+          status: reportStatus(report.status),
+          categoryName: database.categories.find((category) => category.id === report.category_id)?.name ?? 'Other',
+          departmentId: report.assigned_department_id,
+          departmentName: department?.name ?? null,
+          reporterKey: reporterFingerprint(report.phone),
+          createdAt: report.created_at,
+          latitude: report.latitude,
+          longitude: report.longitude,
+          gender: report.gender,
+          birthDate: report.birth_date,
+        }
+      })
     return buildAnalytics(rows, query)
   },
 
@@ -686,10 +720,13 @@ export const localStore: ReportStore = {
   },
 
   async getAdminReport(ticketNumber) {
-    const database = await readDatabase()
-    const report = database.reports.find((entry) => entry.ticket_number === ticketNumber)
-    if (!report) return null
-    return toDetail(database, report)
+    return withLock(async () => {
+      const database = await readDatabase()
+      const report = database.reports.find((entry) => entry.ticket_number === ticketNumber)
+      if (!report) return null
+      if (await applyLocalSiteAddressPin(report)) await writeDatabase(database)
+      return toDetail(database, report)
+    })
   },
 
   updateReportStatus(ticketNumber, input, actor) {
@@ -734,27 +771,58 @@ export const localStore: ReportStore = {
       rememberStaff(database, actor)
       const report = requireReport(database, ticketNumber)
 
-      if (input.department_id !== undefined) {
-        if (input.department_id === null) {
-          report.assigned_department_id = null
-        } else {
-          const department = database.departments.find(
-            (entry) => entry.id === input.department_id && entry.is_active,
-          )
-          if (!department) throw new DepartmentNotFoundError()
-          report.assigned_department_id = department.id
-        }
+      let staffDepartmentId: string | null | undefined
+      if (input.admin_id) {
+        const staff = database.staff.find((entry) => entry.user_id === input.admin_id)
+        if (!staff || !isAdminRole(staff.role)) throw new StaffNotFoundError()
+        report.assigned_admin_id = staff.user_id
+        report.assigned_admin_name = staff.full_name
+        staffDepartmentId = staff.department_id ?? null
+      } else if (input.admin_id === null) {
+        report.assigned_admin_id = null
+        report.assigned_admin_name = null
       }
 
-      if (input.admin_id !== undefined) {
-        if (input.admin_id === null) {
-          report.assigned_admin_id = null
-          report.assigned_admin_name = null
+      const departmentId = resolveAssignedDepartmentId(input.department_id, staffDepartmentId)
+
+      if (departmentId !== undefined) {
+        if (departmentId === null) {
+          report.assigned_department_id = null
+          report.department_assigned_at = null
         } else {
-          const staff = database.staff.find((entry) => entry.user_id === input.admin_id)
-          if (!staff) throw new StaffNotFoundError()
-          report.assigned_admin_id = staff.user_id
-          report.assigned_admin_name = staff.full_name
+          const department = database.departments.find(
+            (entry) => entry.id === departmentId && entry.is_active,
+          )
+          if (!department) throw new DepartmentNotFoundError()
+          const now = new Date().toISOString()
+          const departmentChanged = report.assigned_department_id !== department.id
+          report.assigned_department_id = department.id
+          if (departmentChanged) {
+            report.department_assigned_at = now
+            if (reportStatus(report.status) === 'submitted') {
+              const previous = reportStatus(report.status)
+              report.status = 'received'
+              database.statusHistory.push({
+                id: crypto.randomUUID(),
+                report_id: report.id,
+                previous_status: previous,
+                new_status: 'received',
+                note: `Assigned to ${department.name}. That office can now act on this ticket.`,
+                changed_by: actor.userId,
+                changed_by_name: actor.fullName,
+                created_at: now,
+              })
+            } else {
+              database.notes.push({
+                id: crypto.randomUUID(),
+                report_id: report.id,
+                admin_id: actor.userId,
+                admin_name: actor.fullName,
+                note: `Assigned to ${department.name}. Days with department start from this assignment.`,
+                created_at: now,
+              })
+            }
+          }
         }
       }
 
@@ -914,6 +982,40 @@ export const localStore: ReportStore = {
     })
   },
 
+  createStaff(input) {
+    return withLock(async () => {
+      const database = await readDatabase()
+      const department = database.departments.find(
+        (entry) => entry.id === input.department_id && entry.is_active,
+      )
+      if (!department) throw new DepartmentNotFoundError()
+      const email = input.email.trim().toLowerCase()
+      if (
+        database.staff.some(
+          (entry) => typeof entry.email === 'string' && entry.email.toLowerCase() === email,
+        )
+      ) {
+        throw new DuplicateStaffEmailError()
+      }
+      const staff: LocalStaff = {
+        user_id: crypto.randomUUID(),
+        full_name: input.full_name.trim(),
+        role: input.role,
+        department_id: department.id,
+        email,
+      }
+      database.staff.push(staff)
+      await writeDatabase(database)
+      return {
+        user_id: staff.user_id,
+        full_name: staff.full_name,
+        role: input.role,
+        department_id: department.id,
+        department_name: department.name,
+      }
+    })
+  },
+
   createAccessLog(input) {
     return withLock(async () => {
       const database = await readDatabase()
@@ -925,11 +1027,12 @@ export const localStore: ReportStore = {
       database.accessLogs.push({
         id: crypto.randomUUID(),
         session_id: input.session_id,
-        latitude: input.latitude,
-        longitude: input.longitude,
+        latitude: input.latitude ?? null,
+        longitude: input.longitude ?? null,
         accuracy: input.accuracy ?? null,
         page: normalizeAccessPage(input.page),
         user_agent: input.user_agent,
+        ip_address: input.ip_address ?? null,
         created_at: new Date(now).toISOString(),
       })
       await writeDatabase(database)
@@ -944,15 +1047,19 @@ export const localStore: ReportStore = {
       mapFilterAsListQuery(query),
     )
       .filter((record) => record.latitude != null && record.longitude != null)
-      .map((record) => ({
-        ticket_number: record.ticket_number,
-        category_name: record.category_name,
-        status: record.status,
-        priority: record.priority,
-        created_at: record.created_at,
-        latitude: record.latitude as number,
-        longitude: record.longitude as number,
-      }))
+      .map((record) => {
+        const source = database.reports.find((report) => report.ticket_number === record.ticket_number)
+        return {
+          ticket_number: record.ticket_number,
+          category_name: record.category_name,
+          status: record.status,
+          priority: record.priority,
+          created_at: record.created_at,
+          latitude: record.latitude as number,
+          longitude: record.longitude as number,
+          address: source?.address ?? '',
+        }
+      })
   },
 
   async listMapAccess(query) {
@@ -962,15 +1069,35 @@ export const localStore: ReportStore = {
         latitude: entry.latitude,
         longitude: entry.longitude,
         createdAt: entry.created_at,
+        ipAddress: entry.ip_address,
       })),
       query,
     )
   },
 
+  async listRecentAccessLogs(query, limit = 50) {
+    const database = await readDatabase()
+    return database.accessLogs
+      .filter((entry) => {
+        if (query.date_from && manilaDateKey(entry.created_at) < query.date_from) return false
+        if (query.date_to && manilaDateKey(entry.created_at) > query.date_to) return false
+        return true
+      })
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, limit)
+      .map((entry) => ({
+        created_at: entry.created_at,
+        page: entry.page,
+        ip_address: entry.ip_address,
+        latitude: entry.latitude,
+        longitude: entry.longitude,
+      }))
+  },
+
   createReport(input) {
     return withLock(async () => {
       const database = await readDatabase()
-      const created = insertLocalReport(database, input)
+      const created = insertLocalReport(database, await withSitePin(input))
       await writeDatabase(database)
       return created
     })
@@ -1017,7 +1144,7 @@ export const localStore: ReportStore = {
       if (intake.status !== 'new') throw new FacebookIntakeNotConvertibleError()
       const created = insertLocalReport(
         database,
-        asCreateReportInput(input),
+        await withSitePin(asCreateReportInput(input)),
         `Imported from Facebook by ${actor.fullName}.`,
       )
       const now = new Date().toISOString()
@@ -1088,7 +1215,7 @@ export const localStore: ReportStore = {
         }
         const report = insertLocalReport(
           database,
-          asCreateReportInput(reportInputFromFacebookPreview(item, categoryId)),
+          await withSitePin(asCreateReportInput(reportInputFromFacebookPreview(item, categoryId))),
           `Imported from Facebook by ${actor.fullName}.`,
         )
         database.notes.push({

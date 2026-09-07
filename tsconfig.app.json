@@ -12,6 +12,7 @@
       "@shared/*": ["./shared/*"]
     },
     "moduleResolution": "bundler",
+    "resolveJsonModule": true,
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",

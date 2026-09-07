@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { parseMapFilterQuery, type MapAccessCluster, type MapReportPoint } from '@shared/map'
+import { parseMapFilterQuery, type MapAccessCluster, type MapAccessVisit, type MapReportPoint } from '@shared/map'
 import { PRIORITY_LABELS, REPORT_PRIORITIES, REPORT_STATUSES, STATUS_LABELS } from '@shared/report'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -9,11 +9,13 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Select } from '@/components/ui/Select'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/Table'
 import { catalogDisplayName, fetchAdminCategories, fetchAdminDepartments } from '@/features/admin/catalogApi'
 import { fetchMapAccess, fetchMapReports } from '@/features/admin/mapApi'
 import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { isTomTomConfigured } from '@/lib/tomtom'
 import { ApiError } from '@/services/api'
+import { formatDateTime } from '@/utils/format'
 import { ChevronDown, MapPinned } from 'lucide-react'
 import type { MapLayer } from '@/features/admin/AdminMapCanvas'
 
@@ -38,6 +40,7 @@ export function AdminMapPage() {
   )
   const [reports, setReports] = useState<MapReportPoint[]>([])
   const [clusters, setClusters] = useState<MapAccessCluster[]>([])
+  const [visits, setVisits] = useState<MapAccessVisit[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [categories, setCategories] = useState<{ id: string; name: string; is_active: boolean }[]>([])
@@ -73,6 +76,7 @@ export function AdminMapPage() {
         if (cancelled) return
         setReports(reportResponse.reports)
         setClusters(accessResponse.clusters)
+        setVisits(accessResponse.visits ?? [])
       })
       .catch((err) => {
         if (cancelled) return
@@ -89,11 +93,10 @@ export function AdminMapPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-3xl font-semibold">Map</h1>
+        <h1 className="font-display text-2xl font-semibold sm:text-3xl">Map</h1>
         <p className="mt-1 text-sm text-ink-500">
-          Report pins come from the location a resident shares, or from the address on the ticket
-          if location was not allowed. Names and contact details are never shown. Access locations
-          are grouped so individual visitors cannot be identified.
+          Report locations pin each complaint from its site address in Kidapawan City. System access
+          shows only where people opened the site. Names and contact details are never shown.
         </p>
       </div>
 
@@ -230,15 +233,49 @@ export function AdminMapPage() {
             <p className="px-4 py-3 text-xs text-ink-400">
               {layer === 'reports'
                 ? reports.length === 0
-                  ? 'No report pins in this filter. Tickets need a saved latitude and longitude to appear.'
+                  ? 'No report pins in this filter. Tickets need a site address that can be placed on the map.'
                   : `${reports.length} report location${reports.length === 1 ? '' : 's'} in this filter.`
                 : clusters.length === 0
-                  ? 'No approximate access areas in this range.'
-                  : `${clusters.length} approximate access area${clusters.length === 1 ? '' : 's'} in this range.`}
+                  ? 'No site-visit pins yet. Open the public site once, then refresh this page. Visitor IPs are listed below.'
+                  : `${clusters.length} site-visit area${clusters.length === 1 ? '' : 's'} in this range.`}
+              {layer === 'reports' ? ' City boundary © OpenStreetMap contributors.' : ''}
             </p>
           </>
         )}
       </Card>
+
+      {layer === 'access' ? (
+        <Card className="overflow-hidden">
+          <div className="border-b border-ink-100 px-4 py-3">
+            <p className="text-sm font-semibold text-ink-800">Visitor IPs</p>
+            <p className="mt-1 text-xs text-ink-500">
+              Logged when someone opens the site. Only administrators can see this list.
+            </p>
+          </div>
+          {visits.length === 0 ? (
+            <p className="px-4 py-6 text-sm text-ink-500">No visitor IPs in this date range yet.</p>
+          ) : (
+            <Table>
+              <THead>
+                <TR>
+                  <TH>When</TH>
+                  <TH>IP address</TH>
+                  <TH>Page</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {visits.map((visit) => (
+                  <TR key={`${visit.created_at}-${visit.ip_address ?? 'none'}-${visit.page}`}>
+                    <TD>{formatDateTime(visit.created_at)}</TD>
+                    <TD className="font-mono text-xs">{visit.ip_address || 'Not captured'}</TD>
+                    <TD>{visit.page}</TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          )}
+        </Card>
+      ) : null}
     </div>
   )
 }

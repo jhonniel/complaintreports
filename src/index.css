@@ -1,9 +1,9 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Fraunces", "Times New Roman", ui-serif, serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --font-sans: "Roboto", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Roboto", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Roboto Mono", ui-monospace, monospace;
 
   --color-pine-50: #f2f7f4;
   --color-pine-100: #dceee3;
@@ -93,7 +93,7 @@
   h3,
   .font-display {
     font-family: var(--font-display);
-    letter-spacing: -0.03em;
+    letter-spacing: -0.01em;
     color: var(--color-ink-950);
   }
 
@@ -262,8 +262,15 @@
 .admin-map-canvas {
   position: relative;
   width: 100%;
-  min-height: 20rem;
-  height: min(75vh, 40rem);
+  min-height: 16rem;
+  height: min(55svh, 24rem);
+}
+
+@media (min-width: 768px) {
+  .admin-map-canvas {
+    min-height: 20rem;
+    height: min(75vh, 40rem);
+  }
 }
 
 .admin-map-canvas--compact {

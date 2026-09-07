@@ -39,7 +39,7 @@ export function AdminCategoriesPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="font-display text-3xl font-semibold">Categories</h1>
+        <h1 className="font-display text-2xl font-semibold sm:text-3xl">Categories</h1>
         <p className="mt-1 text-sm text-ink-500">
           Inactive categories stay on existing tickets but are hidden from the public report form.
           {canManage ? '' : ' Staff can view this list. Administrators manage the records.'}

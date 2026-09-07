@@ -18,6 +18,48 @@ export const TICKET_PREFIX = 'TP'
 export const TICKET_PATTERN = /^TP-\d{4}-\d{6}$/
 export const MANILA_TIME_ZONE = 'Asia/Manila'
 
+export function manilaDateKey(value: string | Date) {
+  const date = typeof value === 'string' ? new Date(value) : value
+  if (Number.isNaN(date.getTime())) return ''
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: MANILA_TIME_ZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    })
+      .formatToParts(date)
+      .map((part) => [part.type, part.value]),
+  )
+  return `${parts.year}-${parts.month}-${parts.day}`
+}
+
+export function manilaCalendarDaysBetween(from: string, to: Date = new Date()) {
+  const start = manilaDateKey(from)
+  const end = manilaDateKey(to)
+  if (!start || !end) return null
+  const [startYear, startMonth, startDay] = start.split('-').map(Number)
+  const [endYear, endMonth, endDay] = end.split('-').map(Number)
+  const startUtc = Date.UTC(startYear, startMonth - 1, startDay)
+  const endUtc = Date.UTC(endYear, endMonth - 1, endDay)
+  return Math.round((endUtc - startUtc) / 86_400_000)
+}
+
+export function daysWithDepartment(assignedAt: string | null | undefined) {
+  if (!assignedAt) return null
+  const days = manilaCalendarDaysBetween(assignedAt)
+  if (days == null || days < 0) return null
+  return days
+}
+
+export function formatDaysWithDepartment(assignedAt: string | null | undefined) {
+  const days = daysWithDepartment(assignedAt)
+  if (days == null) return null
+  if (days === 0) return 'Assigned today'
+  if (days === 1) return '1 day with department'
+  return `${days} days with department`
+}
+
 export const PH_MOBILE_PATTERN = /^09\d{9}$/
 export const PH_MOBILE_DIGIT_COUNT = 11
 
@@ -193,11 +235,6 @@ export const personalFieldsSchema = z.object({
     .trim()
     .refine(isReasonableBirthDate, 'Enter a valid birth date'),
   gender: z.enum(GENDERS, { error: 'Select a gender' }),
-  address: z
-    .string()
-    .trim()
-    .min(5, 'Enter your address')
-    .max(300, 'Address is too long'),
   phone: z
     .string()
     .trim()
@@ -217,6 +254,11 @@ export const reportFieldsSchema = z.object({
     .min(5, 'Describe your report in a short title')
     .max(120, 'Title is too long'),
   category_id: z.string().uuid('Choose a category'),
+  address: z
+    .string()
+    .trim()
+    .min(5, 'Enter the address of the site you are reporting')
+    .max(300, 'Address is too long'),
   description: z
     .string()
     .trim()

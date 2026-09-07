@@ -4,6 +4,7 @@ import type {
   AdminReportListQuery,
   AdminReportListResult,
   AssignReportInput,
+  CreateStaffInput,
   StaffOption,
   UpdatePriorityInput,
   UpdateStatusInput,
@@ -61,6 +62,10 @@ export function fetchDepartments() {
 
 export function fetchStaff() {
   return api.get<{ staff: StaffOption[] }>('/admin/staff')
+}
+
+export function createStaff(input: CreateStaffInput) {
+  return api.post<{ staff: StaffOption }>('/admin/staff', input)
 }
 
 export function updateStaffDepartment(userId: string, departmentId: string | null) {

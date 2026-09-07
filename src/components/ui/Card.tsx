@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from 'react'
+import type { HTMLAttributes } from 'react'
 import { cn } from '@/lib/cn'
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
@@ -26,6 +26,10 @@ export function CardDescription({ className, ...props }: HTMLAttributes<HTMLPara
   return <p className={cn('mt-1 text-sm text-ink-500', className)} {...props} />
 }
 
-export function CardBody({ className, children }: { className?: string; children?: ReactNode }) {
-  return <div className={cn('px-5 py-4', className)}>{children}</div>
+export function CardBody({ className, children, ...props }: HTMLAttributes<HTMLDivElement>) {
+  return (
+    <div className={cn('px-5 py-4', className)} {...props}>
+      {children}
+    </div>
+  )
 }

@@ -6,6 +6,7 @@ import {
   type AnalyticsQuery,
   type AnalyticsRange,
   type AnalyticsResponse,
+  type NamedCount,
 } from '../../shared/analytics.ts'
 import { roundAccessCell } from '../../shared/map.ts'
 import {
@@ -22,6 +23,7 @@ import {
 export interface AnalyticsSourceRow {
   status: ReportStatus
   categoryName: string
+  departmentId: string | null
   departmentName: string | null
   reporterKey: string
   createdAt: string
@@ -31,7 +33,7 @@ export interface AnalyticsSourceRow {
   birthDate: string | null
 }
 
-const PENDING: ReportStatus[] = ['submitted', 'received', 'under_review']
+const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000
 
 const AGE_GROUPS = [
   { key: 'under_18', label: 'Under 18', min: 0, max: 17 },
@@ -67,6 +69,28 @@ function ageGroupLabel(age: number | null): string {
 function genderLabel(value: string | null): string {
   if (value && isGender(value)) return GENDER_LABELS[value]
   return 'Unknown'
+}
+
+function departmentMeta(row: AnalyticsSourceRow) {
+  if (row.departmentId) {
+    return { id: row.departmentId, name: row.departmentName?.trim() || 'Unknown department' }
+  }
+  return { id: null as string | null, name: 'Unassigned' }
+}
+
+function addDepartmentCount(map: Map<string, NamedCount>, row: AnalyticsSourceRow) {
+  const meta = departmentMeta(row)
+  const key = meta.id ?? '__unassigned__'
+  const current = map.get(key)
+  if (current) current.count += 1
+  else map.set(key, { id: meta.id, name: meta.name, count: 1 })
+}
+
+function sortedCounts(map: Map<string, NamedCount>) {
+  return [...map.values()].sort((left, right) => {
+    if (right.count !== left.count) return right.count - left.count
+    return left.name.localeCompare(right.name)
+  })
 }
 
 export function reporterFingerprint(phone: string) {
@@ -105,6 +129,10 @@ function utcNoon(year: number, month: number, day: number) {
   return new Date(Date.UTC(year, month - 1, day, 12))
 }
 
+function manilaMidnightUtc(year: number, month: number, day: number) {
+  return new Date(Date.UTC(year, month - 1, day) - MANILA_OFFSET_MS)
+}
+
 function addUtcDays(date: Date, days: number) {
   const next = new Date(date)
   next.setUTCDate(next.getUTCDate() + days)
@@ -121,11 +149,11 @@ function startOfWeekMonday(date: Date) {
 
 function rangeStart(range: AnalyticsRange, now: Date): Date | null {
   const { year, month, day } = manilaParts(now)
-  const today = utcNoon(year, month, day)
-  if (range === 'last_7_days') return addUtcDays(today, -6)
-  if (range === 'last_30_days') return addUtcDays(today, -29)
-  if (range === 'last_12_months') return utcNoon(year - 1, month, day)
-  if (range === 'this_year') return utcNoon(year, 1, 1)
+  const todayStart = manilaMidnightUtc(year, month, day)
+  if (range === 'last_7_days') return addUtcDays(todayStart, -6)
+  if (range === 'last_30_days') return addUtcDays(todayStart, -29)
+  if (range === 'last_12_months') return manilaMidnightUtc(year - 1, month, day)
+  if (range === 'this_year') return manilaMidnightUtc(year, 1, 1)
   return null
 }
 
@@ -180,6 +208,10 @@ function inRange(createdAt: string, start: Date | null, end: Date) {
   return time <= end.getTime()
 }
 
+function isOpenTicket(status: ReportStatus) {
+  return DEPARTMENT_PENDING_STATUSES.includes(status)
+}
+
 export function buildAnalytics(rows: AnalyticsSourceRow[], query: AnalyticsQuery, now = new Date()): AnalyticsResponse {
   const end = now
   const start = rangeStart(query.range, now)
@@ -215,14 +247,14 @@ export function buildAnalytics(rows: AnalyticsSourceRow[], query: AnalyticsQuery
 
   const totals = {
     total: filtered.length,
-    pending: filtered.filter((row) => PENDING.includes(row.status)).length,
+    pending: filtered.filter((row) => isOpenTicket(row.status)).length,
     in_progress: filtered.filter((row) => row.status === 'in_progress').length,
     resolved: filtered.filter((row) => row.status === 'resolved').length,
     closed: filtered.filter((row) => row.status === 'closed').length,
     rejected: filtered.filter((row) => row.status === 'rejected').length,
     reporting_users: firstSeen.size,
-    assigned: filtered.filter((row) => Boolean(row.departmentName)).length,
-    unassigned: filtered.filter((row) => !row.departmentName).length,
+    assigned: filtered.filter((row) => Boolean(row.departmentId)).length,
+    unassigned: filtered.filter((row) => !row.departmentId).length,
   }
 
   const categoryMap = new Map<string, number>()
@@ -231,7 +263,7 @@ export function buildAnalytics(rows: AnalyticsSourceRow[], query: AnalyticsQuery
   }
   const categories = [...categoryMap.entries()]
     .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
 
   const statusMap = new Map<ReportStatus, number>()
   for (const status of REPORT_STATUSES) statusMap.set(status, 0)
@@ -249,11 +281,11 @@ export function buildAnalytics(rows: AnalyticsSourceRow[], query: AnalyticsQuery
   if (!seriesStart && rows.length) {
     const earliest = rows.reduce((min, row) => (row.createdAt < min.createdAt ? row : min))
     const parts = manilaParts(new Date(earliest.createdAt))
-    seriesStart = utcNoon(parts.year, parts.month, parts.day)
+    seriesStart = manilaMidnightUtc(parts.year, parts.month, parts.day)
   }
   if (!seriesStart) {
     const parts = manilaParts(now)
-    seriesStart = utcNoon(parts.year, parts.month, parts.day)
+    seriesStart = manilaMidnightUtc(parts.year, parts.month, parts.day)
   }
 
   if (filtered.length || rows.length) {
@@ -279,24 +311,14 @@ export function buildAnalytics(rows: AnalyticsSourceRow[], query: AnalyticsQuery
     .sort((a, b) => a.sort - b.sort)
     .map((entry) => ({ name: entry.label, count: entry.count }))
 
-  const departmentMap = new Map<string, number>()
+  const departmentMap = new Map<string, NamedCount>()
+  const pendingDepartmentMap = new Map<string, NamedCount>()
   for (const row of filtered) {
-    const name = row.departmentName ?? 'Unassigned'
-    departmentMap.set(name, (departmentMap.get(name) ?? 0) + 1)
+    addDepartmentCount(departmentMap, row)
+    if (isOpenTicket(row.status)) addDepartmentCount(pendingDepartmentMap, row)
   }
-  const departments = [...departmentMap.entries()]
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
-
-  const pendingDepartmentMap = new Map<string, number>()
-  for (const row of filtered) {
-    if (!DEPARTMENT_PENDING_STATUSES.includes(row.status)) continue
-    const name = row.departmentName ?? 'Unassigned'
-    pendingDepartmentMap.set(name, (pendingDepartmentMap.get(name) ?? 0) + 1)
-  }
-  const pending_by_department = [...pendingDepartmentMap.entries()]
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count)
+  const departments = sortedCounts(departmentMap)
+  const pending_by_department = sortedCounts(pendingDepartmentMap)
 
   const areaMap = new Map<string, { latitude: number; longitude: number; count: number }>()
   let withLocation = 0

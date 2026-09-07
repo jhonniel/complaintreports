@@ -14,6 +14,7 @@ export const ADMIN_REPORT_SORTS = [
   'ticket_number',
   'priority',
   'status',
+  'department_assigned_at',
 ] as const
 
 export type AdminReportSort = (typeof ADMIN_REPORT_SORTS)[number]
@@ -70,6 +71,7 @@ export interface AdminReportListItem {
   has_location: boolean
   assigned_department_id: string | null
   assigned_department_name: string | null
+  department_assigned_at: string | null
   assigned_admin_id: string | null
   assigned_admin_name: string | null
   created_at: string
@@ -133,6 +135,7 @@ export interface AdminReportDetail {
   photos: AdminReportPhoto[]
   assigned_department_id: string | null
   assigned_department_name: string | null
+  department_assigned_at: string | null
   assigned_admin_id: string | null
   assigned_admin_name: string | null
   created_at: string
@@ -179,11 +182,42 @@ export const updateStaffSchema = z.object({
   department_id: z.string().uuid().nullable(),
 })
 
+export const STAFF_CREATE_ROLES = ['staff', 'admin'] as const
+export type StaffCreateRole = (typeof STAFF_CREATE_ROLES)[number]
+
+export const createStaffSchema = z.object({
+  full_name: z
+    .string()
+    .trim()
+    .min(2, 'Enter the staff member’s name')
+    .max(80, 'Name is too long'),
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(160, 'Email is too long')
+    .refine((value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value), 'Enter a valid email address'),
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters')
+    .max(72, 'Password is too long'),
+  role: z.enum(STAFF_CREATE_ROLES, { error: 'Choose staff or administrator' }).default('staff'),
+  department_id: z.string().uuid('Choose a department'),
+})
+
+export function generateStaffPassword() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
+  const bytes = new Uint8Array(12)
+  crypto.getRandomValues(bytes)
+  return Array.from(bytes, (byte) => alphabet[byte % alphabet.length]).join('')
+}
+
 export type UpdateStatusInput = z.infer<typeof updateStatusSchema>
 export type UpdatePriorityInput = z.infer<typeof updatePrioritySchema>
 export type AssignReportInput = z.infer<typeof assignReportSchema>
 export type AddNoteInput = z.infer<typeof addNoteSchema>
 export type UpdateStaffInput = z.infer<typeof updateStaffSchema>
+export type CreateStaffInput = z.infer<typeof createStaffSchema>
 
 const DATE_DAY = /^\d{4}-\d{2}-\d{2}$/
 

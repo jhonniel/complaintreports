@@ -56,7 +56,7 @@ export function asCreateReportInput(input: FacebookConvertInput): CreateReportIn
   return {
     ...input,
     photos: [],
-    location: null,
+    location: input.location ?? null,
   }
 }
 

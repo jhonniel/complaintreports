@@ -40,6 +40,7 @@ export interface MapReportPoint {
   created_at: string
   latitude: number
   longitude: number
+  address: string
 }
 
 export function toMapReportPoint(point: MapReportPoint): MapReportPoint {
@@ -51,6 +52,7 @@ export function toMapReportPoint(point: MapReportPoint): MapReportPoint {
     created_at: point.created_at,
     latitude: point.latitude,
     longitude: point.longitude,
+    address: point.address,
   }
 }
 
@@ -58,6 +60,7 @@ export interface MapAccessCluster {
   latitude: number
   longitude: number
   count: number
+  ip_address: string | null
 }
 
 export function toMapAccessCluster(cluster: MapAccessCluster): MapAccessCluster {
@@ -65,21 +68,46 @@ export function toMapAccessCluster(cluster: MapAccessCluster): MapAccessCluster 
     latitude: cluster.latitude,
     longitude: cluster.longitude,
     count: cluster.count,
+    ip_address: cluster.ip_address ?? null,
+  }
+}
+
+export interface MapAccessVisit {
+  created_at: string
+  page: string
+  ip_address: string | null
+  latitude: number | null
+  longitude: number | null
+}
+
+export function toMapAccessVisit(visit: MapAccessVisit): MapAccessVisit {
+  return {
+    created_at: visit.created_at,
+    page: visit.page,
+    ip_address: visit.ip_address,
+    latitude: visit.latitude,
+    longitude: visit.longitude,
   }
 }
 
 export interface CreateAccessLogInput {
   session_id: string
-  latitude: number
-  longitude: number
+  latitude?: number | null
+  longitude?: number | null
   accuracy?: number | null
   page?: string
+  ip_address?: string | null
 }
+
+export const reverseGeocodeSchema = z.object({
+  latitude: z.number().gte(-90).lte(90),
+  longitude: z.number().gte(-180).lte(180),
+})
 
 export const createAccessLogSchema = z.object({
   session_id: z.string().trim().min(8).max(80),
-  latitude: z.number().gte(-90).lte(90),
-  longitude: z.number().gte(-180).lte(180),
+  latitude: z.number().gte(-90).lte(90).optional(),
+  longitude: z.number().gte(-180).lte(180).optional(),
   accuracy: z.number().nonnegative().nullable().optional(),
   page: z.string().trim().max(80).optional(),
   website: z.string().optional(),
@@ -104,7 +132,8 @@ export function parseAccessMapQuery(input: Record<string, unknown>): AccessMapQu
 
 export function normalizeAccessPage(value: string | undefined): string {
   const page = value && value.trim().length > 0 ? value.trim() : '/'
-  return (PUBLIC_ACCESS_PAGES as readonly string[]).includes(page) ? page : '/'
+  if (!page.startsWith('/') || page.includes('//') || page.length > 80) return '/'
+  return page
 }
 
 export function roundAccessCell(value: number) {

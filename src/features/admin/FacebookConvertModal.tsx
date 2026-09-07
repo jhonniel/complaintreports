@@ -20,6 +20,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Select } from '@/components/ui/Select'
 import { Textarea } from '@/components/ui/Textarea'
 import { convertFacebookIntake } from '@/features/admin/facebookApi'
+import { SiteAddressField, type SiteCoordinates } from '@/features/reports/SiteAddressField'
 import { ApiError } from '@/services/api'
 
 interface FacebookConvertModalProps {
@@ -60,6 +61,7 @@ export function FacebookConvertModal({
   }, [intake])
 
   const [values, setValues] = useState(defaults)
+  const [sitePin, setSitePin] = useState<SiteCoordinates | null>(null)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
@@ -70,7 +72,17 @@ export function FacebookConvertModal({
 
   async function submit() {
     setFormError(null)
-    const parsed = facebookConvertSchema.safeParse(values)
+    const parsed = facebookConvertSchema.safeParse({
+      ...values,
+      location: sitePin
+        ? {
+            latitude: sitePin.latitude,
+            longitude: sitePin.longitude,
+            accuracy: null,
+            timestamp: new Date().toISOString(),
+          }
+        : undefined,
+    })
     if (!parsed.success) {
       setErrors(fieldErrors(parsed.error))
       return
@@ -91,7 +103,7 @@ export function FacebookConvertModal({
     <Modal
       open
       title="Create ticket from Facebook"
-      description="Add the reporter details staff can use to follow up. Public tickets still need a name, 11-digit mobile number, and address."
+      description="Add the reporter details staff can use to follow up, plus the site address of the reported concern."
       onClose={onClose}
       className="max-w-2xl"
       footer={
@@ -138,9 +150,23 @@ export function FacebookConvertModal({
             </Select>
           </Field>
         </div>
-        <Field id="fb-address" label="Address" required error={errors.address}>
-          <Input value={values.address} onChange={(event) => update('address', event.target.value)} />
-        </Field>
+        <SiteAddressField
+          id="fb-address"
+          value={values.address}
+          coordinates={sitePin}
+          error={errors.address}
+          allowGps={false}
+          onChange={(address, coordinates) => {
+            setSitePin(coordinates)
+            update('address', address)
+            setErrors((current) => {
+              if (!current.address) return current
+              const next = { ...current }
+              delete next.address
+              return next
+            })
+          }}
+        />
         <div className="grid gap-4 sm:grid-cols-2">
           <Field
             id="fb-phone"
