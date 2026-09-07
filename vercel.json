@@ -12,10 +12,10 @@
       "maxDuration": 30,
       "includeFiles": "{shared,server}/**"
     },
-    "api/track.ts": {
+    "api/cron/keepalive.ts": {
       "maxDuration": 30,
       "includeFiles": "{shared,server}/**"
-    }
+    },
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api?__path=/api/$1" },

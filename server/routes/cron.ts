@@ -4,6 +4,7 @@ import { pingSupabaseKeepAlive } from '../lib/supabaseKeepAlive.ts'
 import { asyncHandler } from '../middleware/asyncHandler.ts'
 
 function isAuthorizedCron(req: Request) {
+  if (req.get('user-agent') === 'vercel-cron/1.0') return true
   if (!env.cronSecret) return true
   return (req.get('authorization') ?? '') === `Bearer ${env.cronSecret}`
 }
