@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight, Lock, MessageSquareHeart, ShieldCheck } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { Card, CardBody } from '@/components/ui/Card'
+import heroImage from '@/assets/kidapawan-aerial-view1.png'
 import { cn } from '@/lib/cn'
 
 const steps = [
@@ -32,9 +32,9 @@ const trust = [
 export function HomePage() {
   return (
     <>
-      <section className="relative w-full min-w-0 overflow-hidden border-b border-pine-900/10">
+      <section className="relative w-full min-w-0 border-b border-pine-900/10">
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(31,157,138,0.16),transparent_48%),linear-gradient(180deg,#f7f4ec_0%,#ece6d4_100%)]" />
-        <div className="container-page relative grid min-w-0 items-center gap-8 py-10 sm:gap-10 sm:py-16 md:grid-cols-2 md:py-24">
+        <div className="container-page relative grid min-w-0 items-center gap-8 py-10 sm:gap-10 sm:py-16 md:grid-cols-[minmax(0,1fr)_minmax(0,1.7fr)] md:items-stretch md:py-24">
           <div className="min-w-0 animate-fade-up">
             <p className="inline-flex max-w-full flex-wrap items-center rounded-full border border-pine-200/80 bg-white/80 px-3 py-1 text-[0.65rem] font-semibold tracking-[0.08em] text-pine-800 uppercase sm:text-[0.72rem] sm:tracking-[0.12em]">
               Civic reporting · Kidapawan City
@@ -63,6 +63,7 @@ export function HomePage() {
             </div>
           </div>
 
+          {/*
           <Card className="min-w-0 animate-fade-up animate-delay-2 overflow-hidden">
             <div className="bg-pine-900 px-5 py-4 text-pine-50">
               <p className="text-[0.68rem] font-semibold tracking-[0.14em] text-earth-400 uppercase">
@@ -89,6 +90,26 @@ export function HomePage() {
               </ul>
             </CardBody>
           </Card>
+          */}
+          <div className="relative order-first aspect-[16/10] w-full animate-fade-up animate-delay-2 md:order-none md:aspect-auto md:h-full">
+            <figure className="absolute inset-0 rounded-xl shadow-[0_24px_50px_rgb(18_17_14/0.42)]">
+              <div className="relative h-full w-full overflow-hidden rounded-xl ring-1 ring-ink-950/10">
+                <img
+                  src={heroImage}
+                  alt="Aerial view of Kidapawan City with Mount Apo"
+                  width={1672}
+                  height={941}
+                  fetchPriority="high"
+                  decoding="async"
+                  className="h-full w-full object-cover object-[center_42%] transition-transform duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] motion-safe:hover:scale-[1.04]"
+                />
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgb(255_255_255/0.12)_0%,transparent_28%,transparent_62%,rgb(18_17_14/0.22)_100%)]"
+                />
+              </div>
+            </figure>
+          </div>
         </div>
       </section>
 
