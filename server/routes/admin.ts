@@ -156,6 +156,14 @@ function sendStoreError(res: Parameters<typeof sendError>[0], error: unknown) {
     )
     return true
   }
+  if (error instanceof Error && error.message === 'REPORT_DELETE_FAILED') {
+    sendError(
+      res,
+      503,
+      'Unable to delete this report. In the Supabase SQL editor, run the latest service-role grants (including report_attachments).',
+    )
+    return true
+  }
   return false
 }
 

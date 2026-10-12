@@ -725,15 +725,22 @@ export function createSupabaseStore(): ReportStore | null {
         .eq('report_id', current.id)
       if (attachmentError) {
         logError('store', attachmentError)
-        throw new Error('STORAGE_UNAVAILABLE')
+      } else {
+        for (const row of attachments ?? []) {
+          if (typeof row.storage_key === 'string') await deletePhotoObject(row.storage_key)
+        }
       }
-      for (const row of attachments ?? []) {
-        if (typeof row.storage_key === 'string') await deletePhotoObject(row.storage_key)
-      }
+
+      const { error: intakeError } = await db
+        .from('facebook_intakes')
+        .update({ report_id: null, ticket_number: null })
+        .eq('report_id', current.id)
+      if (intakeError) logError('store', intakeError)
+
       const { error } = await db.from('reports').delete().eq('id', current.id)
       if (error) {
         logError('store', error)
-        throw new Error('STORAGE_UNAVAILABLE')
+        throw new Error('REPORT_DELETE_FAILED')
       }
     },
 
